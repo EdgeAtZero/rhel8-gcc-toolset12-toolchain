@@ -99,6 +99,56 @@ export CXX=/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12/bin/c++
 
 Do not use `micromamba activate` for release builds. Activation can inject prefix library paths through build flags and defeat the intended target ABI layer.
 
+## GitHub Action
+
+Consumers do not need to reproduce the download or environment setup logic. A release tag can be used directly as a composite action:
+
+```yaml
+- name: Set up RHEL 8 GCC Toolset 12
+  id: toolchain
+  uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
+```
+
+The action:
+
+1. downloads the toolchain archive and checksum from the matching GitHub Release;
+2. verifies SHA-256;
+3. installs the prefix at `/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12`;
+4. adds the toolchain `bin` directory to `GITHUB_PATH`;
+5. exports `CC`, `CXX`, `AR`, `LD`, and the other binutils through `GITHUB_ENV`;
+6. runs the ABI verification probe by default.
+
+The action tag and toolchain release tag are intentionally the same. For example, `@v1.0.0` installs the `v1.0.0` Release asset.
+
+It exposes:
+
+```text
+prefix
+version
+identity
+```
+
+The `identity` output is intended for build cache keys:
+
+```yaml
+- name: Restore native cache
+  uses: actions/cache/restore@v4
+  with:
+    path: nodejs-jni/sdk/linux-x86_64
+    key: libnode-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('nodejs-jni/node-sdk.json') }}
+```
+
+For unusual cases, the release can be overridden explicitly:
+
+```yaml
+- uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
+  with:
+    version: v1.0.0
+    verify: 'true'
+```
+
+The action supports Linux x86_64 runners only. Because the compiler prefix is not arbitrarily relocatable, installation is intentionally fixed under `/opt/toolchains`.
+
 ## Package
 
 After verification:

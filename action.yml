@@ -1,0 +1,141 @@
+name: Setup RHEL 8 GCC Toolset 12 toolchain
+description: Install and configure the prebuilt RHEL 8 ABI / GCC Toolset 12 Linux x86_64 toolchain.
+
+inputs:
+  version:
+    description: Toolchain release tag. Defaults to the action ref, e.g. v1.0.0 when using @v1.0.0.
+    required: false
+    default: ''
+  verify:
+    description: Run the toolchain ABI verification probe after installation.
+    required: false
+    default: 'true'
+
+outputs:
+  prefix:
+    description: Installed toolchain prefix.
+    value: ${{ steps.setup.outputs.prefix }}
+  version:
+    description: Toolchain release tag used for the installation.
+    value: ${{ steps.setup.outputs.version }}
+  identity:
+    description: Stable toolchain identity suitable for build cache keys.
+    value: ${{ steps.setup.outputs.identity }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install and configure toolchain
+      id: setup
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPOSITORY: ${{ github.action_repository }}
+      run: |
+        set -euo pipefail
+
+        name="linux-x86_64-rhel8-gcc-toolset12"
+        prefix="/opt/toolchains/${name}"
+
+        case "$(uname -s)/$(uname -m)" in
+          Linux/x86_64) ;;
+          *)
+            echo "This action supports only Linux x86_64 runners." >&2
+            exit 1
+            ;;
+        esac
+
+        version="${INPUT_VERSION}"
+        if [[ -z "${version}" ]]; then
+          version="${ACTION_REF}"
+        fi
+        if [[ -z "${version}" || "${version}" != v* ]]; then
+          echo "A release tag is required." >&2
+          echo "Use this action through a release tag such as @v1.0.0, or set the 'version' input." >&2
+          exit 1
+        fi
+
+        for command in curl sha256sum tar sudo; do
+          command -v "${command}" >/dev/null 2>&1 || {
+            echo "Required command not found: ${command}" >&2
+            exit 1
+          }
+        done
+
+        if ! command -v zstd >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zstd
+        fi
+
+        download_dir="${RUNNER_TEMP}/rhel8-gcc-toolset12-toolchain-${version}"
+        rm -rf "${download_dir}"
+        mkdir -p "${download_dir}"
+
+        asset="${name}.tar.zst"
+        checksum="${asset}.sha256"
+        base="https://github.com/${ACTION_REPOSITORY}/releases/download/${version}"
+
+        curl -fL --retry 3 --retry-all-errors           "${base}/${asset}"           -o "${download_dir}/${asset}"
+        curl -fL --retry 3 --retry-all-errors           "${base}/${checksum}"           -o "${download_dir}/${checksum}"
+
+        (
+          cd "${download_dir}"
+          sha256sum -c "${checksum}"
+        )
+
+        sudo mkdir -p /opt/toolchains
+        sudo rm -rf "${prefix}"
+        sudo tar --zstd -xf "${download_dir}/${asset}" -C /opt/toolchains
+
+        [[ -x "${prefix}/bin/gcc" ]] || {
+          echo "Installed compiler was not found: ${prefix}/bin/gcc" >&2
+          exit 1
+        }
+
+        echo "${prefix}/bin" >> "${GITHUB_PATH}"
+
+        {
+          echo "CC=${prefix}/bin/cc"
+          echo "CXX=${prefix}/bin/c++"
+          echo "CPP=${prefix}/bin/cpp"
+          echo "GCC=${prefix}/bin/gcc"
+          echo "GXX=${prefix}/bin/g++"
+          echo "AR=${prefix}/bin/ar"
+          echo "AS=${prefix}/bin/as"
+          echo "LD=${prefix}/bin/ld"
+          echo "NM=${prefix}/bin/nm"
+          echo "OBJCOPY=${prefix}/bin/objcopy"
+          echo "OBJDUMP=${prefix}/bin/objdump"
+          echo "RANLIB=${prefix}/bin/ranlib"
+          echo "READELF=${prefix}/bin/readelf"
+          echo "STRINGS=${prefix}/bin/strings"
+          echo "STRIP=${prefix}/bin/strip"
+          echo "ADDR2LINE=${prefix}/bin/addr2line"
+          echo "CXXFILT=${prefix}/bin/c++filt"
+          echo "ELFEDIT=${prefix}/bin/elfedit"
+          echo "SIZE=${prefix}/bin/size"
+          echo "GPROF=${prefix}/bin/gprof"
+        } >> "${GITHUB_ENV}"
+
+        echo "prefix=${prefix}" >> "${GITHUB_OUTPUT}"
+        echo "version=${version}" >> "${GITHUB_OUTPUT}"
+        echo "identity=${name}-${version}" >> "${GITHUB_OUTPUT}"
+
+        "${prefix}/bin/gcc" --version | head -n 1
+        echo "Toolchain: ${name}"
+        echo "Release: ${version}"
+        echo "Prefix: ${prefix}"
+
+    - name: Verify toolchain ABI
+      if: inputs.verify == 'true'
+      shell: bash
+      env:
+        PREFIX: ${{ steps.setup.outputs.prefix }}
+      run: |
+        set -euo pipefail
+        "${{ github.action_path }}/scripts/verify-toolchain.sh"
+
+branding:
+  icon: tool
+  color: red

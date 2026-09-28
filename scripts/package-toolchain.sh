@@ -19,10 +19,14 @@ command -v zstd >/dev/null 2>&1 || {
 
 mkdir -p "$OUT_DIR"
 archive="$OUT_DIR/$NAME.tar.zst"
+checksum="$archive.sha256"
 
 tar -C "$ROOT" --zstd -cf "$archive" "$NAME"
-sha256sum "$archive" >"$archive.sha256"
+(
+  cd "$OUT_DIR"
+  sha256sum "$NAME.tar.zst" > "$NAME.tar.zst.sha256"
+)
 
 echo "Created:"
 echo "  $archive"
-echo "  $archive.sha256"
+echo "  $checksum"
