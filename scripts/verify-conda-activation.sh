@@ -20,11 +20,17 @@ original_ldflags="$LDFLAGS"
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate "$PREFIX"
 wrapper="$PREFIX/libexec/rhel8-gcc-toolset12/bin"
+target="x86_64-conda-linux-gnu"
 [[ "$(command -v gcc)" == "$wrapper/gcc" ]]
 [[ "$(command -v g++)" == "$wrapper/g++" ]]
-[[ "$CC" == "$wrapper/cc" ]]
-[[ "$CXX" == "$wrapper/c++" ]]
-[[ "$AR" == "$wrapper/ar" ]]
+[[ "$(command -v "$target-gcc")" == "$wrapper/$target-gcc" ]]
+[[ "$(command -v "$target-g++")" == "$wrapper/$target-g++" ]]
+[[ "$CC" == "$wrapper/$target-cc" ]]
+[[ "$CXX" == "$wrapper/$target-c++" ]]
+[[ "$AR" == "$target-ar" ]]
+[[ "$(command -v "$AR")" == "$PREFIX/bin/$target-ar" ]]
+[[ "$(readlink "$wrapper/gcc")" == "$target-gcc" ]]
+[[ "$(readlink "$wrapper/g++")" == "$target-g++" ]]
 case " ${LDFLAGS:-} " in *" -Wl,-rpath,$PREFIX/lib "*) echo "prefix RPATH remained in LDFLAGS" >&2; exit 1 ;; esac
 
 work="$(mktemp -d)"

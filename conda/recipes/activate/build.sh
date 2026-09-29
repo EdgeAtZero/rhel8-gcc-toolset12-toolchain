@@ -2,7 +2,7 @@
 set -euo pipefail
 
 target="x86_64-conda-linux-gnu"
-gcc_version="12.2.0"
+gcc_version="12.4.0"
 spec_src="$PREFIX/lib/gcc/$target/$gcc_version/specs"
 spec_dir="$PREFIX/share/rhel8-gcc-toolset12"
 spec_dst="$spec_dir/link.specs"
@@ -51,43 +51,42 @@ set -euo pipefail
 
 self_dir="$(cd "$(dirname "$0")" && pwd)"
 prefix="$(cd "$self_dir/../../.." && pwd)"
+target="x86_64-conda-linux-gnu"
 name="$(basename "$0")"
+name="${name#"$target-"}"
 
 case "$name" in
-  gcc|cc) real="$prefix/bin/x86_64-conda-linux-gnu-gcc" ;;
-  g++|c++) real="$prefix/bin/x86_64-conda-linux-gnu-g++" ;;
-  cpp) exec "$prefix/bin/x86_64-conda-linux-gnu-cpp" "$@" ;;
+  gcc|cc)
+    real="$prefix/bin/$target-gcc"
+    ;;
+  g++|c++)
+    real="$prefix/bin/$target-g++"
+    ;;
+  cpp)
+    exec "$prefix/bin/$target-cpp" "$@"
+    ;;
   *)
     echo "Unsupported compiler wrapper name: $name" >&2
     exit 2
     ;;
 esac
 
-exec "$real" -specs="$prefix/share/rhel8-gcc-toolset12/link.specs" -L"$prefix/lib/rhel8-gcc-toolset12" "$@"
+exec "$real" \
+  -specs="$prefix/share/rhel8-gcc-toolset12/link.specs" \
+  -L"$prefix/lib/rhel8-gcc-toolset12" \
+  "$@"
 EOF
 chmod 0755 "$wrapper_dir/compiler-wrapper"
 
-for name in gcc g++ cpp; do
-  ln -s "compiler-wrapper" "$wrapper_dir/$name"
+for name in gcc cc g++ c++ cpp; do
+  ln -s compiler-wrapper "$wrapper_dir/$target-$name"
 done
-ln -s "gcc" "$wrapper_dir/cc"
-ln -s "g++" "$wrapper_dir/c++"
 
-cat >"$wrapper_dir/binutils-wrapper" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-self_dir="$(cd "$(dirname "$0")" && pwd)"
-prefix="$(cd "$self_dir/../../.." && pwd)"
-name="$(basename "$0")"
-
-exec "$prefix/bin/x86_64-conda-linux-gnu-$name" "$@"
-EOF
-chmod 0755 "$wrapper_dir/binutils-wrapper"
-
-for name in ar as ld nm objcopy objdump ranlib readelf strings strip addr2line c++filt elfedit size gprof; do
-  ln -s "binutils-wrapper" "$wrapper_dir/$name"
-done
+ln -s "$target-gcc" "$wrapper_dir/gcc"
+ln -s "$target-cc" "$wrapper_dir/cc"
+ln -s "$target-g++" "$wrapper_dir/g++"
+ln -s "$target-c++" "$wrapper_dir/c++"
+ln -s "$target-cpp" "$wrapper_dir/cpp"
 
 activate_dir="$PREFIX/etc/conda/activate.d"
 deactivate_dir="$PREFIX/etc/conda/deactivate.d"
@@ -95,28 +94,20 @@ install -d "$activate_dir" "$deactivate_dir"
 
 cat >"$activate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
 _RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
+_RHEL8_GCC_TOOLSET12_TARGET="x86_64-conda-linux-gnu"
+
 export PATH="$_RHEL8_GCC_TOOLSET12_BIN:$PATH"
 
-export CC="$_RHEL8_GCC_TOOLSET12_BIN/cc"
-export CXX="$_RHEL8_GCC_TOOLSET12_BIN/c++"
-export CPP="$_RHEL8_GCC_TOOLSET12_BIN/cpp"
-export GCC="$_RHEL8_GCC_TOOLSET12_BIN/gcc"
-export GXX="$_RHEL8_GCC_TOOLSET12_BIN/g++"
-export AR="$_RHEL8_GCC_TOOLSET12_BIN/ar"
-export AS="$_RHEL8_GCC_TOOLSET12_BIN/as"
-export LD="$_RHEL8_GCC_TOOLSET12_BIN/ld"
-export NM="$_RHEL8_GCC_TOOLSET12_BIN/nm"
-export OBJCOPY="$_RHEL8_GCC_TOOLSET12_BIN/objcopy"
-export OBJDUMP="$_RHEL8_GCC_TOOLSET12_BIN/objdump"
-export RANLIB="$_RHEL8_GCC_TOOLSET12_BIN/ranlib"
-export READELF="$_RHEL8_GCC_TOOLSET12_BIN/readelf"
-export STRINGS="$_RHEL8_GCC_TOOLSET12_BIN/strings"
-export STRIP="$_RHEL8_GCC_TOOLSET12_BIN/strip"
-export ADDR2LINE="$_RHEL8_GCC_TOOLSET12_BIN/addr2line"
-export CXXFILT="$_RHEL8_GCC_TOOLSET12_BIN/c++filt"
-export ELFEDIT="$_RHEL8_GCC_TOOLSET12_BIN/elfedit"
-export SIZE="$_RHEL8_GCC_TOOLSET12_BIN/size"
-export GPROF="$_RHEL8_GCC_TOOLSET12_BIN/gprof"
+# Keep the same target-prefixed compiler identity exposed by conda-forge's
+# compiler activation, but route compiler-driver invocations through the
+# compatibility wrapper.
+export CC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cc"
+export CXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-c++"
+export CPP="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cpp"
+export GCC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-gcc"
+export GXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-g++"
+export CC_FOR_BUILD="$CC"
+export CXX_FOR_BUILD="$CXX"
 
 # conda-forge's GCC activation adds a prefix RPATH to LDFLAGS. The wrapper
 # removes the same RPATH from GCC specs; remove the environment-level copy too
@@ -131,6 +122,7 @@ if [ -n "${LDFLAGS:-}" ]; then
   unset _RHEL8_GCC_TOOLSET12_RPATH
 fi
 
+unset _RHEL8_GCC_TOOLSET12_TARGET
 unset _RHEL8_GCC_TOOLSET12_BIN
 EOF
 
@@ -147,7 +139,7 @@ case ":$PATH:" in
 esac
 unset _RHEL8_GCC_TOOLSET12_BIN
 
-# CC/CXX/binutils variables and LDFLAGS are intentionally left to the
-# conda-forge compiler deactivate scripts, which restore their CONDA_BACKUP_*
-# values from before this environment was activated.
+# Compiler variables and LDFLAGS are intentionally left to the conda-forge
+# compiler deactivate scripts, which restore their CONDA_BACKUP_* values from
+# before this environment was activated.
 EOF

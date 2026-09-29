@@ -8,25 +8,27 @@ package:
   version: ${{ version }}
 
 build:
-  number: 0
+  number: 1
   script: build.sh
 
 requirements:
   build:
     - python 3.13.*
   host:
-    - gcc_impl_linux-64 ==12.2.0 hcc96c02_19
+    - gcc_impl_linux-64 ==12.4.0 h26ba24d_2
   run:
-    - gcc_linux-64 ==12.2.0 h4798a0e_13
-    - gxx_linux-64 ==12.2.0 hb41e900_13
-    - binutils_linux-64 ==2.39 h5fc0e48_13
+    - gcc_linux-64 ==12.4.0 h6b7512a_10
+    - gxx_linux-64 ==12.4.0 h8489865_10
+    - binutils_linux-64 ==2.46.1 default_h4852527_102
     - sysroot_linux-64 ==2.28 h4ee821c_9
     - rhel8-gcc-toolset12-compat ==1.0.0
 
 tests:
   - script:
-      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/gcc"
-      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/g++"
+      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/x86_64-conda-linux-gnu-gcc"
+      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/x86_64-conda-linux-gnu-g++"
+      - test "$(readlink "$PREFIX/libexec/rhel8-gcc-toolset12/bin/gcc")" = "x86_64-conda-linux-gnu-gcc"
+      - test "$(readlink "$PREFIX/libexec/rhel8-gcc-toolset12/bin/g++")" = "x86_64-conda-linux-gnu-g++"
       - test -f "$PREFIX/share/rhel8-gcc-toolset12/link.specs"
 
 about:

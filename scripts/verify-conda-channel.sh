@@ -45,8 +45,8 @@ LIBSTDCXX_RUNTIME_NAME="${values[7]}"
 
 WRAPPER_BIN="$PREFIX/libexec/rhel8-gcc-toolset12/bin"
 COMPAT="$PREFIX/lib/rhel8-gcc-toolset12"
-CXX="$WRAPPER_BIN/c++"
-CC="$WRAPPER_BIN/cc"
+CXX="$WRAPPER_BIN/$TARGET-c++"
+CC="$WRAPPER_BIN/$TARGET-cc"
 READELF="$PREFIX/bin/$TARGET-readelf"
 SPEC="$PREFIX/share/rhel8-gcc-toolset12/link.specs"
 
@@ -56,6 +56,20 @@ for path in "$CXX" "$CC" "$READELF" "$SPEC"   "$COMPAT/libstdc++.so" "$COMPAT/li
     exit 1
   }
 done
+
+if find "$PREFIX/bin" -maxdepth 1 -name 'x86_64-conda_cos6-linux-gnu-*' -print -quit | grep -q .; then
+  echo "Modern conda-forge compiler stack unexpectedly contains cos6 compatibility aliases." >&2
+  exit 1
+fi
+
+[[ "$(readlink "$WRAPPER_BIN/gcc")" == "$TARGET-gcc" ]] || {
+  echo "Short gcc wrapper does not follow the conda-forge target-prefixed layout." >&2
+  exit 1
+}
+[[ "$(readlink "$WRAPPER_BIN/g++")" == "$TARGET-g++" ]] || {
+  echo "Short g++ wrapper does not follow the conda-forge target-prefixed layout." >&2
+  exit 1
+}
 
 [[ "$("$CXX" -dumpmachine)" == "$TARGET" ]] || {
   echo "Unexpected compiler target." >&2
