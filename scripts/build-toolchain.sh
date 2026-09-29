@@ -332,26 +332,11 @@ chmod 0755 "$WRAPPER_DIR/compiler-wrapper"
 for name in gcc cc g++ c++ cpp; do
   ln -s "compiler-wrapper" "$WRAPPER_DIR/$TARGET-$name"
 done
-ln -s "$TARGET-gcc" "$WRAPPER_DIR/gcc"
-ln -s "$TARGET-cc" "$WRAPPER_DIR/cc"
-ln -s "$TARGET-g++" "$WRAPPER_DIR/g++"
-ln -s "$TARGET-c++" "$WRAPPER_DIR/c++"
-ln -s "$TARGET-cpp" "$WRAPPER_DIR/cpp"
+# Keep $PREFIX/bin aligned with conda-forge: compiler and binutils remain
+# target-prefixed there. Compatibility wrappers also remain target-prefixed
+# under libexec and are selected through compiler environment variables.
 
-# Keep convenient short command names in the assembled environment while
-# routing compiler drivers through the compatibility wrappers.
-for name in gcc cc g++ c++ cpp; do
-  ln -sfn "../libexec/rhel8-gcc-toolset12/bin/$name" "$PREFIX/bin/$name"
-done
-
-# Binutils stay on the conda-forge target-prefixed binaries.
-for name in ar as ld nm objcopy objdump ranlib readelf strings strip addr2line c++filt elfedit size gprof; do
-  target_name="$TARGET-$name"
-  [[ -e "$PREFIX/bin/$target_name" ]] || continue
-  ln -sfn "$target_name" "$PREFIX/bin/$name"
-done
-
-if "$PREFIX/bin/gcc" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; then
+if "$WRAPPER_DIR/$TARGET-gcc" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; then
   echo "Conda prefix RPATH is still present in effective GCC specs." >&2
   exit 1
 fi
@@ -364,7 +349,8 @@ cat >"$activate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
 _RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
 _RHEL8_GCC_TOOLSET12_TARGET="x86_64-conda-linux-gnu"
 
-export PATH="$_RHEL8_GCC_TOOLSET12_BIN:$PATH"
+# Preserve conda-forge's PATH and normal compiler command resolution.
+# Build systems that honor CC/CXX are routed through the compatibility layer.
 export CC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cc"
 export CXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-c++"
 export CPP="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cpp"
@@ -388,17 +374,7 @@ unset _RHEL8_GCC_TOOLSET12_BIN
 EOF
 
 cat >"$deactivate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
-_RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
-case ":$PATH:" in
-  *":$_RHEL8_GCC_TOOLSET12_BIN:"*)
-    PATH=":$PATH:"
-    PATH="${PATH//:$_RHEL8_GCC_TOOLSET12_BIN:/:}"
-    PATH="${PATH#:}"
-    PATH="${PATH%:}"
-    export PATH
-    ;;
-esac
-unset _RHEL8_GCC_TOOLSET12_BIN
+# PATH is intentionally untouched by the compatibility activation layer.
 EOF
 
 install -m 0644 "$MANIFEST" "$PREFIX/TOOLCHAIN-MANIFEST.json"
@@ -439,8 +415,8 @@ python3 "$REPO_ROOT/scripts/normalize-conda-metadata.py" "$PREFIX"
 
 echo
 echo "Created: $PREFIX"
-echo "Compiler: $("$PREFIX/bin/gcc" --version | head -n 1)"
-echo "Sysroot : $("$PREFIX/bin/gcc" -print-sysroot)"
+echo "Compiler: $("$WRAPPER_DIR/$TARGET-gcc" --version | head -n 1)"
+echo "Sysroot : $("$WRAPPER_DIR/$TARGET-gcc" -print-sysroot)"
 echo "Inputs  : $CONDA_LOCK_REL + pinned AlmaLinux 8.10 RPMs"
 echo
 echo "Run scripts/verify-toolchain.sh to validate the ABI."

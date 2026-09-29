@@ -8,7 +8,7 @@ The packages are split by ownership:
 - `rhel8-gcc-toolset12-activate` owns wrappers, a patched copy of the GCC link spec, and conda activation scripts;
 - `rhel8-gcc-toolset12-toolchain` is the user-facing meta package that pins the tested conda-forge package set.
 
-The wrappers deliberately do not modify files owned by conda-forge. In particular, the original GCC `specs` file remains untouched; the wrapper loads a project-owned `link.specs` override that removes the conda prefix RPATH and adds the compatibility runtime search directory.
+The wrappers deliberately do not modify files owned by conda-forge. In particular, `$PREFIX/bin`, `PATH`, and normal `gcc`/`g++` command resolution remain conda-forge/user defaults. Activation routes compiler environment variables (`CC`, `CXX`, `CPP`, `GCC`, `GXX`, `CC_FOR_BUILD`, and `CXX_FOR_BUILD`) through target-prefixed compatibility wrappers without changing `PATH` or normal compiler command resolution. The original GCC `specs` file remains untouched; the wrapper's project-owned `link.specs` override removes the conda prefix RPATH and adds the compatibility runtime search directory.
 
 Install from the public channel with micromamba:
 

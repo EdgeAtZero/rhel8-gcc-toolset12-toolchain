@@ -65,10 +65,11 @@ LIBSTDCXX_RUNTIME_NAME="${values[8]}"
   exit 1
 }
 
-CXX="$PREFIX/bin/c++"
-CC="$PREFIX/bin/cc"
-READELF="$PREFIX/bin/readelf"
-STRINGS="$PREFIX/bin/strings"
+WRAPPER_BIN="$PREFIX/libexec/rhel8-gcc-toolset12/bin"
+CXX="$WRAPPER_BIN/$TARGET-c++"
+CC="$WRAPPER_BIN/$TARGET-cc"
+READELF="$PREFIX/bin/$TARGET-readelf"
+STRINGS="$PREFIX/bin/$TARGET-strings"
 COMPAT="$PREFIX/lib/rhel8-gcc-toolset12"
 SPEC="$PREFIX/share/rhel8-gcc-toolset12/link.specs"
 

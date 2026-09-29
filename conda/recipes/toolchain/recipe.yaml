@@ -8,7 +8,7 @@ package:
   version: ${{ version }}
 
 build:
-  number: 1
+  number: 2
   script:
     - mkdir -p "$PREFIX/share/rhel8-gcc-toolset12"
     - printf '%s\n' "RHEL 8 GCC Toolset 12 compatibility toolchain meta package" > "$PREFIX/share/rhel8-gcc-toolset12/toolchain.txt"

@@ -48,6 +48,26 @@ micromamba activate rhel8-gcc-toolset12
 
 The environment is stored under micromamba's normal root prefix rather than a project-specific `/opt` location. Shell activation requires micromamba shell integration to be initialized in the usual way.
 
+### Compiler activation model
+
+Activation deliberately does not replace the user's `gcc`, `g++`, or `PATH` command resolution, and it does not overwrite conda-forge's target-prefixed compiler binaries under `$CONDA_PREFIX/bin`.
+
+Instead, the compatibility layer is selected through compiler environment variables:
+
+```text
+CC
+CXX
+CPP
+GCC
+GXX
+CC_FOR_BUILD
+CXX_FOR_BUILD
+```
+
+Those variables point to target-prefixed wrappers under `$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin`. The wrappers invoke the original conda-forge GCC 12 compiler while applying the RHEL 8 compatibility link policy. Binutils variables such as `AR`, `AS`, and `LD` remain the normal conda-forge target-prefixed tools.
+
+The activation layer also removes only conda-forge's `$CONDA_PREFIX/lib` runtime RPATH from `LDFLAGS`; link-time `-rpath-link` and `-L` search paths remain intact. This avoids embedding the micromamba environment path in released binaries while preserving conda-forge's normal build-time library discovery.
+
 ## Why
 
 Projects such as Node.js 24 / V8 need a modern C++20 compiler and modern libstdc++ headers. Building them with GCC 8 headers is not viable because APIs such as `<version>`, `std::span`, ranges, `std::atomic_ref`, and `std::erase_if` are required.

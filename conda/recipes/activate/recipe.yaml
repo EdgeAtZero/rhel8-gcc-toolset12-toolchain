@@ -8,7 +8,7 @@ package:
   version: ${{ version }}
 
 build:
-  number: 2
+  number: 3
   script: build.sh
 
 requirements:
@@ -27,8 +27,6 @@ tests:
   - script:
       - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/x86_64-conda-linux-gnu-gcc"
       - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/x86_64-conda-linux-gnu-g++"
-      - test "$(readlink "$PREFIX/libexec/rhel8-gcc-toolset12/bin/gcc")" = "x86_64-conda-linux-gnu-gcc"
-      - test "$(readlink "$PREFIX/libexec/rhel8-gcc-toolset12/bin/g++")" = "x86_64-conda-linux-gnu-g++"
       - test -f "$PREFIX/share/rhel8-gcc-toolset12/link.specs"
 
 about:

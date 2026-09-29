@@ -14,23 +14,33 @@ export AR=/usr/bin/ar
 export LDFLAGS="-Wl,--as-needed"
 original_cc="$CC"
 original_cxx="$CXX"
+original_cpp="${CPP:-}"
+original_gcc="${GCC:-}"
+original_gxx="${GXX:-}"
 original_ar="$AR"
 original_ldflags="$LDFLAGS"
+
+original_gcc_command="$(command -v gcc || true)"
+original_gxx_command="$(command -v g++ || true)"
 
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate "$PREFIX"
 wrapper="$PREFIX/libexec/rhel8-gcc-toolset12/bin"
 target="x86_64-conda-linux-gnu"
-[[ "$(command -v gcc)" == "$wrapper/gcc" ]]
-[[ "$(command -v g++)" == "$wrapper/g++" ]]
-[[ "$(command -v "$target-gcc")" == "$wrapper/$target-gcc" ]]
-[[ "$(command -v "$target-g++")" == "$wrapper/$target-g++" ]]
+
+[[ "$(command -v gcc || true)" == "$original_gcc_command" ]]
+[[ "$(command -v g++ || true)" == "$original_gxx_command" ]]
+[[ "$(command -v "$target-gcc")" == "$PREFIX/bin/$target-gcc" ]]
+[[ "$(command -v "$target-g++")" == "$PREFIX/bin/$target-g++" ]]
 [[ "$CC" == "$wrapper/$target-cc" ]]
 [[ "$CXX" == "$wrapper/$target-c++" ]]
+[[ "$CPP" == "$wrapper/$target-cpp" ]]
+[[ "$GCC" == "$wrapper/$target-gcc" ]]
+[[ "$GXX" == "$wrapper/$target-g++" ]]
+[[ "$CC_FOR_BUILD" == "$CC" ]]
+[[ "$CXX_FOR_BUILD" == "$CXX" ]]
 [[ "$AR" == "$target-ar" ]]
 [[ "$(command -v "$AR")" == "$PREFIX/bin/$target-ar" ]]
-[[ "$(readlink "$wrapper/gcc")" == "$target-gcc" ]]
-[[ "$(readlink "$wrapper/g++")" == "$target-g++" ]]
 case " ${LDFLAGS:-} " in *" -Wl,-rpath,$PREFIX/lib "*) echo "prefix RPATH remained in LDFLAGS" >&2; exit 1 ;; esac
 
 work="$(mktemp -d)"
@@ -57,8 +67,11 @@ fi
 micromamba deactivate
 [[ "$CC" == "$original_cc" ]]
 [[ "$CXX" == "$original_cxx" ]]
+[[ "${CPP:-}" == "$original_cpp" ]]
+[[ "${GCC:-}" == "$original_gcc" ]]
+[[ "${GXX:-}" == "$original_gxx" ]]
 [[ "$AR" == "$original_ar" ]]
 [[ "$LDFLAGS" == "$original_ldflags" ]]
-[[ "$(command -v gcc)" != "$wrapper/gcc" ]]
+[[ "$(command -v gcc || true)" == "$original_gcc_command" ]]
 
 echo "Conda activation/deactivation verification passed."

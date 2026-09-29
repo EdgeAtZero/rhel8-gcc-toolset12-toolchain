@@ -83,12 +83,6 @@ for name in gcc cc g++ c++ cpp; do
   ln -s compiler-wrapper "$wrapper_dir/$target-$name"
 done
 
-ln -s "$target-gcc" "$wrapper_dir/gcc"
-ln -s "$target-cc" "$wrapper_dir/cc"
-ln -s "$target-g++" "$wrapper_dir/g++"
-ln -s "$target-c++" "$wrapper_dir/c++"
-ln -s "$target-cpp" "$wrapper_dir/cpp"
-
 activate_dir="$PREFIX/etc/conda/activate.d"
 deactivate_dir="$PREFIX/etc/conda/deactivate.d"
 install -d "$activate_dir" "$deactivate_dir"
@@ -97,11 +91,8 @@ cat >"$activate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
 _RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
 _RHEL8_GCC_TOOLSET12_TARGET="x86_64-conda-linux-gnu"
 
-export PATH="$_RHEL8_GCC_TOOLSET12_BIN:$PATH"
-
-# Keep the same target-prefixed compiler identity exposed by conda-forge's
-# compiler activation, but route compiler-driver invocations through the
-# compatibility wrapper.
+# Preserve conda-forge's PATH and normal compiler command resolution.
+# Build systems that honor CC/CXX are routed through the compatibility layer.
 export CC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cc"
 export CXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-c++"
 export CPP="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cpp"
@@ -128,17 +119,7 @@ unset _RHEL8_GCC_TOOLSET12_BIN
 EOF
 
 cat >"$deactivate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
-_RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
-case ":$PATH:" in
-  *":$_RHEL8_GCC_TOOLSET12_BIN:"*)
-    PATH=":$PATH:"
-    PATH="${PATH//:$_RHEL8_GCC_TOOLSET12_BIN:/:}"
-    PATH="${PATH#:}"
-    PATH="${PATH%:}"
-    export PATH
-    ;;
-esac
-unset _RHEL8_GCC_TOOLSET12_BIN
+# PATH is intentionally untouched by the compatibility activation layer.
 
 # Compiler variables and LDFLAGS are intentionally left to the conda-forge
 # compiler deactivate scripts, which restore their CONDA_BACKUP_* values from

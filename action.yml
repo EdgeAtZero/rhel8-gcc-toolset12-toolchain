@@ -81,7 +81,6 @@ runs:
         set -u
 
         printf '%s\n' "${prefix}/bin" >> "${GITHUB_PATH}"
-        printf '%s\n' "${prefix}/libexec/rhel8-gcc-toolset12/bin" >> "${GITHUB_PATH}"
 
         activated_vars=(
           CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL
