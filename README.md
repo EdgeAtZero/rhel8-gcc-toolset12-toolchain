@@ -224,10 +224,10 @@ For conda-forge:
 
 For AlmaLinux RPMs, update `manifests/toolchain.json` only after checking the new payload, SHA-256, exported ABI ceilings, and compatibility probe. An automatic updater may open a PR in the future, but it should never auto-merge an ABI baseline change.
 
-## Experimental local conda channel
+## Conda channel
 
-The repository now contains a local-only conda channel prototype under
-`conda/`. It deliberately splits package ownership instead of repackaging the
+The repository contains the conda channel packaging model under
+`conda/`. The same recipes support local validation and the published Pages channel. It deliberately splits package ownership instead of repackaging the
 whole `/opt` toolchain:
 
 ```text
@@ -256,12 +256,20 @@ actually selects the isolated RHEL 8 compatibility runtimes, and exercises
 `micromamba activate` / `deactivate` including `CC`, `CXX`, binutils, and RPATH
 behavior. See [conda/README.md](conda/README.md).
 
-The channel is **not published yet**. The local build now mirrors the exact
-AlmaLinux source RPMs under `sources/`, emits `SOURCE-METADATA.json` and
-`SHA256SUMS`, and verifies the binary-input-to-source mapping. This addresses
-the corresponding-source delivery path identified for the three redistributed
-GCC runtime payloads; publication remains disabled while the channel workflow
-is still experimental and under review.
+On successful `main` validation, the channel workflow publishes the exact
+validated snapshot to the orphan `gh-pages` branch and deploys the same files
+with GitHub Pages. The branch is force-replaced on each publication, so it keeps
+one generated commit instead of accumulating historical SRPM blobs.
+
+The public channel URL is:
+
+```text
+https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda
+```
+
+GitHub Pages must be configured once with **Source: GitHub Actions** in the
+repository Pages settings. Pull requests only run validation and never update
+`gh-pages` or deploy Pages.
 
 ## Licensing and provenance
 

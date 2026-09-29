@@ -71,14 +71,16 @@ generates `SOURCE-METADATA.json` plus `SHA256SUMS`.
 RPM has a declared source mapping, and confirms each SRPM contains `gcc.spec`
 and a GCC source tarball.
 
-## Future binary redistribution
+## Conda channel redistribution
 
-If this project later publishes the experimental conda channel, the complete
-channel surface should include the generated `sources/` directory next to the
-custom binary packages so the pinned Corresponding Source stays available with
-the redistributed objects. A monolithic binary toolchain archive remains a
-separate redistribution surface and requires its own complete license/source
-review.
+The `main` channel workflow publishes the complete validated channel snapshot,
+including the generated `sources/` directory next to the custom binary packages,
+so the pinned Corresponding Source is distributed with the redistributed GCC
+runtime objects. The same snapshot is stored as a single reachable commit on
+`gh-pages` and deployed through GitHub Pages.
+
+A monolithic binary toolchain archive remains a separate redistribution surface
+and requires its own complete license/source review before public publication.
 
 An SPDX SBOM is useful inventory/provenance data, but it is not a substitute
 for those redistribution obligations.
