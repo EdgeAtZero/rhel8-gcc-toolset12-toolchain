@@ -1,0 +1,36 @@
+schema_version: 1
+
+context:
+  version: "1.0.0"
+
+package:
+  name: rhel8-gcc-toolset12-activate
+  version: ${{ version }}
+
+build:
+  number: 0
+  script: build.sh
+
+requirements:
+  build:
+    - python 3.13.*
+  host:
+    - gcc_impl_linux-64 ==12.2.0 hcc96c02_19
+  run:
+    - gcc_linux-64 ==12.2.0 h4798a0e_13
+    - gxx_linux-64 ==12.2.0 hb41e900_13
+    - binutils_linux-64 ==2.39 h5fc0e48_13
+    - sysroot_linux-64 ==2.28 h4ee821c_9
+    - rhel8-gcc-toolset12-compat ==1.0.0
+
+tests:
+  - script:
+      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/gcc"
+      - test -x "$PREFIX/libexec/rhel8-gcc-toolset12/bin/g++"
+      - test -f "$PREFIX/share/rhel8-gcc-toolset12/link.specs"
+
+about:
+  homepage: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
+  repository: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
+  license: MIT
+  summary: Wrapper and activation layer for the RHEL 8 GCC Toolset 12 toolchain

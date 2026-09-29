@@ -224,32 +224,42 @@ For conda-forge:
 
 For AlmaLinux RPMs, update `manifests/toolchain.json` only after checking the new payload, SHA-256, exported ABI ceilings, and compatibility probe. An automatic updater may open a PR in the future, but it should never auto-merge an ABI baseline change.
 
-## Future conda channel
+## Experimental local conda channel
 
-A conda channel is a better long-term installation surface than republishing a
-monolithic `/opt` archive, but it should be split deliberately.
-
-The intended package model is:
+The repository now contains a local-only conda channel prototype under
+`conda/`. It deliberately splits package ownership instead of repackaging the
+whole `/opt` toolchain:
 
 ```text
-rhel8-gcc-toolset12-toolchain     meta package
+rhel8-gcc-toolset12-toolchain     tested meta package
         |
         +-- exact conda-forge GCC/binutils/sysroot dependencies
         +-- rhel8-gcc-toolset12-compat
         +-- rhel8-gcc-toolset12-activate
 ```
 
-`rhel8-gcc-toolset12-compat` should own only the compatibility overlay files
-that cannot be expressed as ordinary conda-forge dependencies. If that package
-contains AlmaLinux/GNU GPL or LGPL binary payloads, its channel release must
-also carry the required notices and exact corresponding-source access.
+`rhel8-gcc-toolset12-compat` owns only the isolated compatibility runtime under
+`lib/rhel8-gcc-toolset12/`. `rhel8-gcc-toolset12-activate` owns project wrappers,
+a project-owned GCC link-spec override, and conda activation scripts. It does
+not overwrite files owned by conda-forge packages. The meta package pins the
+exact package builds verified by this project.
 
-`rhel8-gcc-toolset12-activate` should contain project-owned wrapper/activation
-logic and must not overwrite paths owned by conda-forge packages.
+Build and validate the local channel with:
 
-The meta package then pins the tested package set and gives users one stable
-package name without copying the whole conda-forge compiler stack into this
-project's channel.
+```bash
+./scripts/build-conda-channel.sh
+```
+
+The validation creates a fresh environment from the local `file://` channel and
+conda-forge, checks ABI ceilings and package ownership, verifies that the linker
+actually selects the isolated RHEL 8 compatibility runtimes, and exercises
+`micromamba activate` / `deactivate` including `CC`, `CXX`, binutils, and RPATH
+behavior. See [conda/README.md](conda/README.md).
+
+The channel is **not published yet**. The compatibility package contains
+AlmaLinux/GNU binary payloads, so public publication remains blocked until the
+exact corresponding source/SRPMs and required third-party notices are pinned
+and made available.
 
 ## Licensing and provenance
 

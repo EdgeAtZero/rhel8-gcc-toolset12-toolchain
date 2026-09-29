@@ -1,0 +1,39 @@
+schema_version: 1
+
+context:
+  version: "1.0.0"
+
+package:
+  name: rhel8-gcc-toolset12-compat
+  version: ${{ version }}
+
+source:
+  - url: https://repo.almalinux.org/almalinux/8.10/BaseOS/x86_64/os/Packages/libstdc++-8.5.0-28.el8_10.alma.1.x86_64.rpm
+    sha256: 0302b9006d719a31dd51aeaf31fec03d70aad5c318674537bd80c49f9174b066
+    file_name: libstdcxx.rpm
+  - url: https://repo.almalinux.org/almalinux/8.10/BaseOS/x86_64/os/Packages/libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm
+    sha256: 629a08266f7c1397c00d7c32c0ac6d110fe56e993dcf94024559aa28a570f18d
+    file_name: libgcc.rpm
+  - url: https://repo.almalinux.org/almalinux/8.10/AppStream/x86_64/os/Packages/gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm
+    sha256: acdc19b1ee0b01cbf06377522bd412c20ca2bdbda68630ea6c9ae9ca7c344711
+    file_name: libstdcxx-nonshared.rpm
+
+build:
+  number: 0
+  dynamic_linking:
+    binary_relocation: false
+    rpaths: []
+    overlinking_behavior: ignore
+  script: build.sh
+
+tests:
+  - script:
+      - test -f "$PREFIX/lib/rhel8-gcc-toolset12/libstdc++.so.6.0.25"
+      - test -f "$PREFIX/lib/rhel8-gcc-toolset12/libgcc_s.so.1"
+      - test -f "$PREFIX/lib/rhel8-gcc-toolset12/libstdc++_nonshared.a"
+
+about:
+  homepage: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
+  repository: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
+  license: GPL-3.0-only WITH GCC-exception-3.1
+  summary: RHEL 8 compatibility runtime overlay for the GCC Toolset 12 toolchain
