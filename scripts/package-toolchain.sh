@@ -8,10 +8,10 @@ echo "NOTICE: generated toolchain archives are for local/internal use by default
 echo "Public redistribution requires separate third-party license/source review; see THIRD_PARTY.md." >&2
 
 TOOLCHAIN_NAME="linux-x86_64-rhel8-gcc-toolset12"
-PREFIX="${PREFIX:-/opt/toolchains/$TOOLCHAIN_NAME}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREFIX="${PREFIX:-$("$REPO_ROOT/scripts/resolve-toolchain-prefix.sh")}"
 ROOT="$(dirname "$PREFIX")"
 NAME="$(basename "$PREFIX")"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist}"
 MANIFEST="$REPO_ROOT/manifests/toolchain.json"
 RELEASE_VERSION="${RELEASE_VERSION:-dev}"

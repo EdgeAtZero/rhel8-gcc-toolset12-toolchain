@@ -30,8 +30,11 @@ runs:
         set -euo pipefail
 
         name="linux-x86_64-rhel8-gcc-toolset12"
-        prefix="/opt/toolchains/${name}"
         action_path="${{ github.action_path }}"
+        environment_name="$(
+          python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["environment_name"])' \
+            "${action_path}/manifests/toolchain.json"
+        )"
 
         case "$(uname -s)/$(uname -m)" in
           Linux/x86_64) ;;
@@ -41,27 +44,18 @@ runs:
             ;;
         esac
 
-        SUDO=()
-        if ((EUID != 0)); then
-          command -v sudo >/dev/null 2>&1 || {
-            echo "sudo is required to install under /opt/toolchains." >&2
-            exit 1
-          }
-          SUDO=(sudo)
-        fi
-
         missing=()
         for command in curl cpio rpm2cpio zstd sha256sum python3; do
           command -v "${command}" >/dev/null 2>&1 || missing+=("${command}")
         done
 
         if (("${#missing[@]}" > 0)); then
-          if command -v apt-get >/dev/null 2>&1; then
-            "${SUDO[@]}" apt-get update
-            "${SUDO[@]}" apt-get install -y --no-install-recommends curl cpio rpm2cpio zstd python3 coreutils
+          if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends curl cpio rpm2cpio zstd python3 coreutils
           else
             printf 'Missing required host commands: %s\n' "${missing[*]}" >&2
-            echo "Automatic installation currently supports apt-get based runners only." >&2
+            echo "Automatic installation currently supports sudo + apt-get runners only." >&2
             exit 1
           fi
         fi
@@ -73,30 +67,36 @@ runs:
         export PATH="${tool_bin}:${PATH}"
 
         "${action_path}/scripts/build-toolchain.sh" --force
+        prefix="$("${action_path}/scripts/resolve-toolchain-prefix.sh")"
 
-        echo "${prefix}/bin" >> "${GITHUB_PATH}"
-        {
-          echo "CC=${prefix}/bin/cc"
-          echo "CXX=${prefix}/bin/c++"
-          echo "CPP=${prefix}/bin/cpp"
-          echo "GCC=${prefix}/bin/gcc"
-          echo "GXX=${prefix}/bin/g++"
-          echo "AR=${prefix}/bin/ar"
-          echo "AS=${prefix}/bin/as"
-          echo "LD=${prefix}/bin/ld"
-          echo "NM=${prefix}/bin/nm"
-          echo "OBJCOPY=${prefix}/bin/objcopy"
-          echo "OBJDUMP=${prefix}/bin/objdump"
-          echo "RANLIB=${prefix}/bin/ranlib"
-          echo "READELF=${prefix}/bin/readelf"
-          echo "STRINGS=${prefix}/bin/strings"
-          echo "STRIP=${prefix}/bin/strip"
-          echo "ADDR2LINE=${prefix}/bin/addr2line"
-          echo "CXXFILT=${prefix}/bin/c++filt"
-          echo "ELFEDIT=${prefix}/bin/elfedit"
-          echo "SIZE=${prefix}/bin/size"
-          echo "GPROF=${prefix}/bin/gprof"
-        } >> "${GITHUB_ENV}"
+        if [[ -z "${MAMBA_ROOT_PREFIX:-}" ]]; then
+          export MAMBA_ROOT_PREFIX="$(
+            micromamba info --json |
+              python3 -c 'import json, sys; print(json.load(sys.stdin)["base environment"])'
+          )"
+        fi
+        eval "$(micromamba shell hook --shell bash)"
+        micromamba activate "${environment_name}"
+
+        printf '%s\n' "${prefix}/bin" >> "${GITHUB_PATH}"
+        printf '%s\n' "${prefix}/libexec/rhel8-gcc-toolset12/bin" >> "${GITHUB_PATH}"
+
+        activated_vars=(
+          CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL
+          CONDA_TOOLCHAIN_HOST CONDA_TOOLCHAIN_BUILD CONDA_BUILD_SYSROOT
+          HOST BUILD
+          CC CXX CPP GCC GXX CC_FOR_BUILD CXX_FOR_BUILD
+          AR AS LD NM OBJCOPY OBJDUMP RANLIB READELF STRINGS STRIP
+          ADDR2LINE CXXFILT ELFEDIT SIZE GPROF
+          CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+          DEBUG_CFLAGS DEBUG_CXXFLAGS DEBUG_CPPFLAGS
+          CMAKE_PREFIX_PATH CMAKE_ARGS MESON_ARGS
+        )
+        for variable in "${activated_vars[@]}"; do
+          if [[ -v "$variable" ]]; then
+            printf '%s=%s\n' "$variable" "${!variable}" >> "${GITHUB_ENV}"
+          fi
+        done
 
         identity_hash="$(
           sha256sum \
@@ -111,9 +111,10 @@ runs:
         echo "version=${version}" >> "${GITHUB_OUTPUT}"
         echo "identity=${name}-${identity_hash:0:16}" >> "${GITHUB_OUTPUT}"
 
-        "${prefix}/bin/gcc" --version | head -n 1
+        "$CC" --version | head -n 1
         echo "Toolchain: ${name}"
         echo "Source ref: ${version}"
+        echo "Environment: ${environment_name}"
         echo "Prefix: ${prefix}"
 
     - name: Verify toolchain ABI

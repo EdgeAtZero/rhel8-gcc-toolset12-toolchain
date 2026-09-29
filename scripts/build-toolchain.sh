@@ -26,7 +26,7 @@ with open(sys.argv[1], encoding="utf-8") as f:
 values = [
     data["name"],
     data["target"],
-    data["default_prefix"],
+    data["environment_name"],
     data["compiler"]["gcc_version"],
     data["compiler"]["sysroot_version"],
     data["compiler"]["conda_lock"],
@@ -54,7 +54,7 @@ PY
 
 TOOLCHAIN_NAME="${manifest_values[0]}"
 TARGET="${manifest_values[1]}"
-DEFAULT_PREFIX="${manifest_values[2]}"
+ENVIRONMENT_NAME="${manifest_values[2]}"
 GCC_VERSION="${manifest_values[3]}"
 SYSROOT_VERSION="${manifest_values[4]}"
 CONDA_LOCK_REL="${manifest_values[5]}"
@@ -81,7 +81,7 @@ NONSHARED_SHA256="${manifest_values[22]}"
 NONSHARED_PAYLOAD="${manifest_values[23]}"
 
 CONDA_LOCK="$REPO_ROOT/$CONDA_LOCK_REL"
-PREFIX="$DEFAULT_PREFIX"
+PREFIX=""
 FORCE=0
 
 usage() {
@@ -91,7 +91,7 @@ Usage: $0 [--prefix PATH] [--force]
 Build the RHEL 8 / GCC Toolset 12 compatibility toolchain from pinned inputs.
 
 Options:
-  --prefix PATH   Installation prefix (default: $DEFAULT_PREFIX)
+  --prefix PATH   Override the micromamba named-environment location
   --force         Remove an existing prefix before rebuilding
   -h, --help      Show this help
 EOF
@@ -136,45 +136,27 @@ grep -Fx '@EXPLICIT' "$CONDA_LOCK" >/dev/null || {
   exit 1
 }
 
-require_sudo() {
-  command -v sudo >/dev/null 2>&1 || {
-    echo "sudo is required to install under: $PREFIX" >&2
-    exit 1
-  }
-}
-
-prefix_parent="$(dirname "$PREFIX")"
-
-if [[ -e "$PREFIX" ]]; then
-  if ((FORCE)); then
-    if [[ -w "$prefix_parent" ]]; then
+if [[ -n "$PREFIX" ]]; then
+  if [[ -e "$PREFIX" ]]; then
+    if ((FORCE)); then
       rm -rf "$PREFIX"
     else
-      require_sudo
-      sudo rm -rf "$PREFIX"
+      echo "Prefix already exists: $PREFIX" >&2
+      echo "Use --force to rebuild it." >&2
+      exit 1
     fi
-  else
-    echo "Prefix already exists: $PREFIX" >&2
-    echo "Use --force to rebuild it." >&2
-    exit 1
   fi
-fi
-
-if [[ ! -d "$prefix_parent" ]]; then
-  parent_parent="$(dirname "$prefix_parent")"
-  if [[ -w "$parent_parent" ]]; then
-    mkdir -p "$prefix_parent"
-  else
-    require_sudo
-    sudo mkdir -p "$prefix_parent"
-  fi
-fi
-
-if [[ -w "$prefix_parent" ]]; then
-  mkdir -p "$PREFIX"
+  mkdir -p "$(dirname "$PREFIX")"
 else
-  require_sudo
-  sudo install -d -o "$(id -u)" -g "$(id -g)" "$PREFIX"
+  if micromamba run -n "$ENVIRONMENT_NAME" true >/dev/null 2>&1; then
+    if ((FORCE)); then
+      micromamba env remove -y -n "$ENVIRONMENT_NAME"
+    else
+      echo "Micromamba environment already exists: $ENVIRONMENT_NAME" >&2
+      echo "Use --force to rebuild it." >&2
+      exit 1
+    fi
+  fi
 fi
 
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/rhel8-gcc-toolset12-toolchain"
@@ -221,10 +203,12 @@ for payload in   "$WORK_DIR/libstdcxx/$LIBSTDCXX_PAYLOAD"   "$WORK_DIR/libgcc/$L
   }
 done
 
-MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$CACHE_ROOT/mamba-root-v1}"
-export MAMBA_ROOT_PREFIX
-
-micromamba --no-rc create -y -p "$PREFIX" -f "$CONDA_LOCK"
+if [[ -n "$PREFIX" ]]; then
+  micromamba create -y -p "$PREFIX" -f "$CONDA_LOCK"
+else
+  micromamba create -y -n "$ENVIRONMENT_NAME" -f "$CONDA_LOCK"
+  PREFIX="$(micromamba run -n "$ENVIRONMENT_NAME" sh -c 'printf "%s\n" "$CONDA_PREFIX"')"
+fi
 
 compiler="$PREFIX/bin/$TARGET-gcc"
 [[ -x "$compiler" ]] || {
@@ -354,7 +338,7 @@ ln -s "$TARGET-g++" "$WRAPPER_DIR/g++"
 ln -s "$TARGET-c++" "$WRAPPER_DIR/c++"
 ln -s "$TARGET-cpp" "$WRAPPER_DIR/cpp"
 
-# Keep the fixed-prefix assembly's convenient short command names while
+# Keep convenient short command names in the assembled environment while
 # routing compiler drivers through the compatibility wrappers.
 for name in gcc cc g++ c++ cpp; do
   ln -sfn "../libexec/rhel8-gcc-toolset12/bin/$name" "$PREFIX/bin/$name"
@@ -371,6 +355,51 @@ if "$PREFIX/bin/gcc" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; th
   echo "Conda prefix RPATH is still present in effective GCC specs." >&2
   exit 1
 fi
+
+activate_dir="$PREFIX/etc/conda/activate.d"
+deactivate_dir="$PREFIX/etc/conda/deactivate.d"
+install -d "$activate_dir" "$deactivate_dir"
+
+cat >"$activate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
+_RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
+_RHEL8_GCC_TOOLSET12_TARGET="x86_64-conda-linux-gnu"
+
+export PATH="$_RHEL8_GCC_TOOLSET12_BIN:$PATH"
+export CC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cc"
+export CXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-c++"
+export CPP="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-cpp"
+export GCC="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-gcc"
+export GXX="$_RHEL8_GCC_TOOLSET12_BIN/$_RHEL8_GCC_TOOLSET12_TARGET-g++"
+export CC_FOR_BUILD="$CC"
+export CXX_FOR_BUILD="$CXX"
+
+if [ -n "${LDFLAGS:-}" ]; then
+  _RHEL8_GCC_TOOLSET12_RPATH="-Wl,-rpath,$CONDA_PREFIX/lib"
+  LDFLAGS=" ${LDFLAGS} "
+  LDFLAGS="${LDFLAGS// $_RHEL8_GCC_TOOLSET12_RPATH / }"
+  LDFLAGS="${LDFLAGS# }"
+  LDFLAGS="${LDFLAGS% }"
+  export LDFLAGS
+  unset _RHEL8_GCC_TOOLSET12_RPATH
+fi
+
+unset _RHEL8_GCC_TOOLSET12_TARGET
+unset _RHEL8_GCC_TOOLSET12_BIN
+EOF
+
+cat >"$deactivate_dir/zz-rhel8-gcc-toolset12.sh" <<'EOF'
+_RHEL8_GCC_TOOLSET12_BIN="$CONDA_PREFIX/libexec/rhel8-gcc-toolset12/bin"
+case ":$PATH:" in
+  *":$_RHEL8_GCC_TOOLSET12_BIN:"*)
+    PATH=":$PATH:"
+    PATH="${PATH//:$_RHEL8_GCC_TOOLSET12_BIN:/:}"
+    PATH="${PATH#:}"
+    PATH="${PATH%:}"
+    export PATH
+    ;;
+esac
+unset _RHEL8_GCC_TOOLSET12_BIN
+EOF
 
 install -m 0644 "$MANIFEST" "$PREFIX/TOOLCHAIN-MANIFEST.json"
 install -m 0644 "$CONDA_LOCK" "$PREFIX/CONDA-EXPLICIT.lock"

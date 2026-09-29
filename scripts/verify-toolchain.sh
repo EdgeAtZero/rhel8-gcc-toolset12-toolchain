@@ -5,8 +5,8 @@ export TZ=UTC
 umask 022
 
 TOOLCHAIN_NAME="linux-x86_64-rhel8-gcc-toolset12"
-PREFIX="${PREFIX:-/opt/toolchains/$TOOLCHAIN_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PREFIX="${PREFIX:-$("$SCRIPT_DIR/resolve-toolchain-prefix.sh")}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 if [[ -f "$PREFIX/TOOLCHAIN-MANIFEST.json" ]]; then

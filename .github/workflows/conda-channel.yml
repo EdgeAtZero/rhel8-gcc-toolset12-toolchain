@@ -115,7 +115,7 @@ jobs:
           <p>Generated from <code>$GITHUB_SHA</code>.</p>
           <p>Channel URL: <code>https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda</code></p>
           <pre>micromamba create -y \
-            -p /opt/toolchains/linux-x86_64-rhel8-gcc-toolset12 \
+            -n rhel8-gcc-toolset12 \
             --override-channels \
             -c https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda \
             -c conda-forge \

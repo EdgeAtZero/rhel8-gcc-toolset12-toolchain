@@ -8,13 +8,13 @@ Installed identity:
 linux-x86_64-rhel8-gcc-toolset12
 ```
 
-Fixed-prefix assembly default:
+Default micromamba environment:
 
 ```text
-/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12
+rhel8-gcc-toolset12
 ```
 
-This fixed prefix is used by the repository assembly path and GitHub Action. Public conda-channel installs should use a normal micromamba named environment instead.
+The repository build path, GitHub Action, and public channel all use a normal micromamba named environment by default. Its absolute prefix is determined by micromamba's configured root prefix.
 
 Target compatibility ceilings:
 
@@ -106,13 +106,13 @@ zstd
 micromamba
 ```
 
-Build the fixed-prefix release toolchain:
+Build the default micromamba environment:
 
 ```bash
 ./scripts/build-toolchain.sh
 ```
 
-Rebuild an existing prefix:
+Rebuild the existing named environment:
 
 ```bash
 ./scripts/build-toolchain.sh --force
@@ -124,7 +124,7 @@ A custom prefix is supported for local experiments:
 ./scripts/build-toolchain.sh --prefix /tmp/rhel8-gcc-toolset12
 ```
 
-Local archives are intentionally built for the default `/opt/toolchains/...` prefix. The conda compiler packages contain prefix-aware content, so the archive is not advertised as arbitrarily relocatable.
+Local archives are built from the resolved micromamba environment prefix. The conda compiler packages contain prefix-aware content, so these local archives are not advertised as arbitrarily relocatable.
 
 ## Verify
 
@@ -179,9 +179,10 @@ Consumers can assemble the pinned toolchain directly on a Linux x86_64 runner:
 
 The Action no longer downloads a prebuilt project Release archive. It installs
 the pinned micromamba bootstrap, downloads the exact conda-forge and AlmaLinux
-inputs recorded by this repository, assembles the fixed-prefix toolchain under
-`/opt/toolchains`, exports the compiler/binutils environment variables, and
-runs the ABI verification gate by default.
+inputs recorded by this repository, assembles the `rhel8-gcc-toolset12` named
+environment in micromamba's normal environment location, activates it with
+micromamba, persists the activated compiler environment for subsequent steps,
+and runs the ABI verification gate by default.
 
 Outputs:
 
@@ -206,10 +207,11 @@ The only optional input is verification:
     verify: 'false'
 ```
 
-There is intentionally no arbitrary `install-prefix` input because the compiler
-packages contain prefix-aware content and the supported assembled prefix is
-fixed. Consumers that want download caching can cache
-`~/.cache/rhel8-gcc-toolset12-toolchain` in their own workflow.
+There is intentionally no arbitrary `install-prefix` Action input. The environment
+name comes from the committed manifest and micromamba chooses its normal environment
+location. The `prefix` output exposes the resolved absolute path for consumers that
+need it. Consumers that want download caching can cache
+`~/.cache/rhel8-gcc-toolset12-toolchain` and their micromamba package cache.
 
 ## GitHub Actions and supply chain
 
