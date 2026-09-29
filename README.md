@@ -317,8 +317,10 @@ behavior. See [conda/README.md](conda/README.md).
 Production publication is tag-driven. A semantic version tag such as `v1.0.1`
 renders all custom conda package versions as `1.0.1`, seeds the build from the
 already-published Pages channel, refuses to overwrite an existing package filename,
-validates the combined channel, and only then deploys that append-only snapshot to
-GitHub Pages. No generated Git branch is used as a publication surface.
+validates the combined channel, and uploads that immutable artifact. A separate
+default-branch deployment workflow downloads that exact tag artifact and deploys
+the append-only snapshot to GitHub Pages, satisfying Pages environment protection
+rules without rebuilding from `main`. No generated Git branch is used as a publication surface.
 
 The public channel URL is:
 
