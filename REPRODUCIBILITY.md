@@ -12,9 +12,10 @@ The assembly path consumes:
 
 - a SHA-256-pinned micromamba binary from `manifests/toolchain.json`;
 - `manifests/conda-linux-64.lock`, an `@EXPLICIT` conda lock containing exact URLs/build strings and package SHA-256 values;
+- `manifests/conda-builder-linux-64.lock`, an `@EXPLICIT` lock for rattler-build and all of its conda dependencies;
 - fixed AlmaLinux 8.10 RPM URLs and SHA-256 values from `manifests/toolchain.json`.
 
-No conda solver is run in the pinned assembly path.
+No conda solver is run in the pinned assembly path, and the channel builder environment is recreated from its explicit lock.
 
 ## Prefix normalization
 
@@ -56,7 +57,7 @@ license.
 ## Current non-hermetic boundary
 
 The repository does not yet pin the complete build container/OS image. In
-particular, `tar`, `zctd`, `rpm2cpio`, `cpio`, the kernel, and filesystem
+particular, `tar`, `zstd`, `rpm2cpio`, `cpio`, the kernel, and filesystem
 implementation are supplied by the host runner.
 
 Therefore the current guarantee is intentionally narrower than "bit-identical

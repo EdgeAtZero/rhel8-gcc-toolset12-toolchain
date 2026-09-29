@@ -98,12 +98,13 @@ The shared runtimes come from pinned AlmaLinux 8.10 RPMs. Newer implementation p
 
 ## Reproducibility model
 
-Pinned toolchain assembly does not run the conda solver.
+Pinned toolchain assembly does not run the conda solver. The conda channel builder is also installed from an explicit lock rather than solved from a version-only constraint.
 
 The repository contains:
 
 - `manifests/toolchain.json`: toolchain identity, ABI policy, RPM URLs/hashes, and the pinned micromamba bootstrap;
 - `manifests/conda-linux-64.lock`: a complete `@EXPLICIT` conda-forge package set including exact build strings and SHA-256 hashes;
+- `manifests/conda-builder-linux-64.lock`: the exact rattler-build environment used to produce public conda packages;
 - SHA-256-pinned AlmaLinux 8.10 RPM inputs;
 - a pinned micromamba release binary and SHA-256.
 
@@ -149,7 +150,9 @@ Local archives are built from the resolved micromamba environment prefix. The co
 ## Verify
 
 ```bash
+./scripts/verify-metadata-consistency.py
 ./scripts/verify-toolchain.sh
+./scripts/verify-runtime-almalinux8.sh
 ```
 
 The verification gate checks:
@@ -163,7 +166,9 @@ The verification gate checks:
 - absence of `RPATH` / `RUNPATH`;
 - compiler include/linker inputs staying inside the toolchain prefix/sysroot;
 - absence of absolute symlinks in the prefix;
-- absence of volatile conda package-cache paths and transaction timestamps.
+- absence of volatile conda package-cache paths and transaction timestamps;
+- consistency between the manifest, explicit conda locks, and exact recipe requirements;
+- successful execution of representative C and C++20 probes inside a digest-pinned AlmaLinux 8 amd64 container.
 
 A typical probe currently requires substantially less than the policy ceilings, but that is only the probe's requirement. Consumers must inspect their final binaries separately.
 
@@ -212,8 +217,11 @@ version
 identity
 ```
 
-`identity` is derived from the committed toolchain manifest and explicit conda
-lock, so it is suitable for consumer build-cache keys:
+`identity` is derived from the committed toolchain behavior inputs: the manifest,
+explicit conda lock, Action definition, assembly/activation logic, micromamba
+bootstrap helper, prefix resolver, and metadata normalization code. Changing
+compiler/link behavior therefore changes the identity even when package inputs do
+not, making it suitable for consumer build-cache keys:
 
 ```yaml
 key: native-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('your-inputs.json') }}
@@ -240,9 +248,9 @@ The repository workflow:
 1. caches only downloads from the original upstream package repositories;
 2. installs a SHA-256-pinned micromamba binary;
 3. assembles from the explicit conda lock and pinned AlmaLinux RPMs;
-4. runs the ABI verification gate;
+4. verifies metadata consistency, ABI ceilings, and execution on a digest-pinned AlmaLinux 8 image;
 5. does not upload or publish the assembled third-party binary toolchain;
-6. on `v*` tags, creates a source-only GitHub Release for this repository.
+6. on semantic version tags such as `v1.0.1`, creates or updates the source-only GitHub Release for that immutable tag.
 
 Third-party GitHub Actions are pinned to commit SHAs rather than mutable major
 tags.
@@ -301,9 +309,14 @@ actually selects the isolated RHEL 8 compatibility runtimes, and exercises
 `micromamba activate` / `deactivate` including `CC`, `CXX`, binutils, and RPATH
 behavior. See [conda/README.md](conda/README.md).
 
-On successful `main` validation, the channel workflow deploys the exact
-validated snapshot directly to GitHub Pages from the validated workflow artifact.
-No generated Git branch is used as a publication surface.
+`main`, pull requests, and manual workflow runs build and validate a local
+`0.0.0` candidate channel only; they do not modify the public Pages channel.
+
+Production publication is tag-driven. A semantic version tag such as `v1.0.1`
+renders all custom conda package versions as `1.0.1`, seeds the build from the
+already-published Pages channel, refuses to overwrite an existing package filename,
+validates the combined channel, and only then deploys that append-only snapshot to
+GitHub Pages. No generated Git branch is used as a publication surface.
 
 The public channel URL is:
 

@@ -72,5 +72,8 @@
       ]
     }
   },
-  "environment_name": "rhel8-gcc-toolset12"
+  "environment_name": "rhel8-gcc-toolset12",
+  "runtime_test": {
+    "almalinux8_image": "docker.io/library/almalinux@sha256:158fba66c3434c58d07fb48cb6f19e3da84a7d9494cb07774d5d36a746136dce"
+  }
 }

@@ -18,6 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Verify metadata consistency
+        run: ./scripts/verify-metadata-consistency.py
+
       - name: Cache upstream packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -44,6 +47,9 @@ jobs:
 
       - name: Verify toolchain ABI
         run: ./scripts/verify-toolchain.sh
+
+      - name: Run probes on AlmaLinux 8
+        run: ./scripts/verify-runtime-almalinux8.sh
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')

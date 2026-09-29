@@ -1,7 +1,7 @@
 schema_version: 1
 
 context:
-  version: "1.0.0"
+  version: ${{ env.get("TOOLCHAIN_VERSION", default="0.0.0") }}
 
 package:
   name: rhel8-gcc-toolset12-activate
@@ -21,7 +21,7 @@ requirements:
     - gxx_linux-64 ==12.4.0 h8489865_10
     - binutils_linux-64 ==2.46.1 default_h4852527_102
     - sysroot_linux-64 ==2.28 h4ee821c_9
-    - rhel8-gcc-toolset12-compat ==1.0.0
+    - rhel8-gcc-toolset12-compat ==${{ version }}
 
 tests:
   - script:

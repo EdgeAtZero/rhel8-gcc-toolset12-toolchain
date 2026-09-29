@@ -3,11 +3,13 @@ name: conda-channel
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
     paths:
       - 'conda/**'
       - 'manifests/**'
       - 'scripts/**'
       - 'README.md'
+      - 'REPRODUCIBILITY.md'
       - 'THIRD_PARTY.md'
       - '.github/workflows/conda-channel.yml'
   pull_request:
@@ -16,6 +18,7 @@ on:
       - 'manifests/**'
       - 'scripts/**'
       - 'README.md'
+      - 'REPRODUCIBILITY.md'
       - 'THIRD_PARTY.md'
       - '.github/workflows/conda-channel.yml'
   workflow_dispatch:
@@ -31,11 +34,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Verify metadata consistency
+        run: ./scripts/verify-metadata-consistency.py
+
       - name: Cache channel inputs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/rhel8-gcc-toolset12-toolchain
-          key: rhel8-conda-channel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('manifests/toolchain.json', 'manifests/conda-linux-64.lock', 'conda/**', 'scripts/build-conda-channel.sh', 'scripts/prepare-conda-sources.sh') }}
+          key: rhel8-conda-channel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('manifests/toolchain.json', 'manifests/conda-linux-64.lock', 'manifests/conda-builder-linux-64.lock', 'conda/**', 'scripts/build-conda-channel.sh', 'scripts/prepare-conda-sources.sh') }}
           restore-keys: |
             rhel8-conda-channel-${{ runner.os }}-${{ runner.arch }}-
 
@@ -50,17 +56,42 @@ jobs:
           ./scripts/install-micromamba.sh --destination "$RUNNER_TEMP/toolchain-bin/micromamba"
           echo "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
 
+      - name: Resolve channel version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v*.*.* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.0.0"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid release tag version: $version" >&2
+            exit 1
+          }
+          echo "TOOLCHAIN_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Build and validate channel
         env:
           CHANNEL_DIR: ${{ runner.temp }}/conda-channel
-        run: ./scripts/build-conda-channel.sh
+          TEST_PREFIX: ${{ runner.temp }}/conda-channel-test
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v*.*.* ]]; then
+            export SEED_CHANNEL_URL="https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda"
+          fi
+          ./scripts/build-conda-channel.sh
+
+      - name: Run channel probes on AlmaLinux 8
+        env:
+          PREFIX: ${{ runner.temp }}/conda-channel-test
+        run: ./scripts/verify-runtime-almalinux8.sh
 
       - name: Verify channel artifact inventory
         env:
           CHANNEL_DIR: ${{ runner.temp }}/conda-channel
         run: |
-          test "$(find "$CHANNEL_DIR/linux-64" -maxdepth 1 -type f -name '*.conda' | wc -l)" -eq 3
-          test "$(find "$CHANNEL_DIR/sources" -maxdepth 1 -type f -name '*.src.rpm' | wc -l)" -eq 2
+          test "$(find "$CHANNEL_DIR/linux-64" -maxdepth 1 -type f -name '*.conda' | wc -l)" -ge 3
+          test "$(find "$CHANNEL_DIR/sources" -maxdepth 1 -type f -name '*.src.rpm' | wc -l)" -ge 2
           test -f "$CHANNEL_DIR/linux-64/repodata.json"
           test -f "$CHANNEL_DIR/noarch/repodata.json"
           test -f "$CHANNEL_DIR/sources/SOURCE-METADATA.json"
@@ -76,14 +107,14 @@ jobs:
           retention-days: 1
 
   publish:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
     needs: validate
     runs-on: ubuntu-24.04
     concurrency:
       group: conda-channel-pages
       cancel-in-progress: false
     permissions:
-      contents: write
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -105,6 +136,7 @@ jobs:
           SITE_DIR: ${{ runner.temp }}/site
         run: |
           set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
 
           touch "$SITE_DIR/.nojekyll"
           cat >"$SITE_DIR/index.html" <<EOF
@@ -112,7 +144,7 @@ jobs:
           <meta charset="utf-8">
           <title>RHEL 8 GCC Toolset 12 conda channel</title>
           <h1>RHEL 8 GCC Toolset 12 conda channel</h1>
-          <p>Generated from <code>$GITHUB_SHA</code>.</p>
+          <p>Published from immutable tag <code>$GITHUB_REF_NAME</code> at <code>$GITHUB_SHA</code>.</p>
           <p>Channel URL: <code>https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda</code></p>
           <pre>micromamba create -y \
             -n rhel8-gcc-toolset12 \
@@ -120,10 +152,11 @@ jobs:
             -c https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda \
             -c conda-forge \
             --strict-channel-priority \
-            rhel8-gcc-toolset12-toolchain=1.0.0</pre>
+            rhel8-gcc-toolset12-toolchain=$version</pre>
           EOF
 
           printf '%s\n' "$GITHUB_SHA" >"$SITE_DIR/SOURCE-COMMIT"
+          printf '%s\n' "$GITHUB_REF_NAME" >"$SITE_DIR/SOURCE-TAG"
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

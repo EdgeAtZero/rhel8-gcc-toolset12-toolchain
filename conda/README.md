@@ -1,6 +1,6 @@
 # Conda channel
 
-This directory contains the conda packaging model for the toolchain. It supports local `file://` validation and, after successful `main` validation, direct publication through GitHub Pages.
+This directory contains the conda packaging model for the toolchain. Local and `main` builds validate an unpublished `0.0.0` candidate; only immutable semantic-version tags publish the production channel through GitHub Pages.
 
 The packages are split by ownership:
 
@@ -35,8 +35,8 @@ The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/con
 
 A local install can be tested directly with the `file://` channel printed by the build script.
 
-CI runs the same path in `.github/workflows/conda-channel.yml` on a clean Ubuntu runner and uploads the complete validated channel as a short-lived workflow artifact.
+CI runs the same path in `.github/workflows/conda-channel.yml` on a clean Ubuntu runner and uploads the complete validated channel as a short-lived workflow artifact. The builder environment itself comes from `manifests/conda-builder-linux-64.lock`, an exact `@EXPLICIT` lock.
 
-For successful `main` runs, a publish job downloads that exact validated artifact, prepares `.nojekyll`, `conda/`, and a small landing page, then deploys the snapshot directly through GitHub Pages. No generated Git branch is created or retained.
+`main` and pull requests validate only. On a tag such as `v1.0.1`, the workflow derives package version `1.0.1` from the tag, seeds the candidate from the existing public channel, rejects any attempt to replace an already-published package filename, validates the merged channel, then deploys that exact artifact through GitHub Pages. No generated Git branch is created or retained.
 
 The resulting local channel remains useful for engineering validation, while GitHub Pages is the public distribution surface after Pages is enabled with **Source: GitHub Actions**. Its `sources/` directory contains the two SHA-256-pinned AlmaLinux source RPMs corresponding to all three redistributed GCC runtime payloads, together with machine-readable mapping metadata. See `THIRD_PARTY.md` for the redistribution model and provenance details.
