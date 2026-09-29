@@ -1,0 +1,73 @@
+name: validate-conda-channel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'conda/**'
+      - 'manifests/**'
+      - 'scripts/**'
+      - 'THIRD_PARTY.md'
+      - '.github/workflows/conda-channel.yml'
+  pull_request:
+    paths:
+      - 'conda/**'
+      - 'manifests/**'
+      - 'scripts/**'
+      - 'THIRD_PARTY.md'
+      - '.github/workflows/conda-channel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache channel inputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/rhel8-gcc-toolset12-toolchain
+          key: rhel8-conda-channel-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('manifests/toolchain.json', 'manifests/conda-linux-64.lock', 'conda/**', 'scripts/build-conda-channel.sh', 'scripts/prepare-conda-sources.sh') }}
+          restore-keys: |
+            rhel8-conda-channel-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl cpio rpm2cpio
+
+      - name: Install pinned micromamba
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolchain-bin"
+          ./scripts/install-micromamba.sh --destination "$RUNNER_TEMP/toolchain-bin/micromamba"
+          echo "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
+
+      - name: Build and validate channel
+        env:
+          CHANNEL_DIR: ${{ runner.temp }}/conda-channel
+        run: ./scripts/build-conda-channel.sh
+
+      - name: Verify channel artifact inventory
+        env:
+          CHANNEL_DIR: ${{ runner.temp }}/conda-channel
+        run: |
+          test "$(find "$CHANNEL_DIR/linux-64" -maxdepth 1 -type f -name '*.conda' | wc -l)" -eq 3
+          test "$(find "$CHANNEL_DIR/sources" -maxdepth 1 -type f -name '*.src.rpm' | wc -l)" -eq 2
+          test -f "$CHANNEL_DIR/linux-64/repodata.json"
+          test -f "$CHANNEL_DIR/noarch/repodata.json"
+          test -f "$CHANNEL_DIR/sources/SOURCE-METADATA.json"
+          test -f "$CHANNEL_DIR/sources/SHA256SUMS"
+
+      - name: Upload validated channel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: conda-channel-${{ github.sha }}
+          path: ${{ runner.temp }}/conda-channel
+          if-no-files-found: error
+          compression-level: 0

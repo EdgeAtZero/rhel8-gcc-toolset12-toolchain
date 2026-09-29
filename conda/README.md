@@ -20,4 +20,6 @@ The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/con
 
 A local install can be tested directly with the `file://` channel printed by the build script.
 
+CI runs the same path in `.github/workflows/conda-channel.yml` on a clean Ubuntu runner and uploads the complete validated channel as a single workflow artifact. The workflow does not deploy GitHub Pages or otherwise publish a permanent channel.
+
 The resulting channel is still for local engineering validation only. Its `sources/` directory contains the two SHA-256-pinned AlmaLinux source RPMs corresponding to all three redistributed GCC runtime payloads, together with machine-readable mapping metadata. See `THIRD_PARTY.md` for the redistribution model and provenance details.
