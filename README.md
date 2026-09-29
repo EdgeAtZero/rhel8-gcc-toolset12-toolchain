@@ -1,75 +1,107 @@
 # RHEL 8 GCC Toolset 12 Toolchain
 
-A reproducible Linux x86_64 release toolchain built from:
+A reproducible-input Linux x86_64 release toolchain that combines a modern GCC 12 C++20 compiler/header set with a RHEL 8 runtime ABI baseline.
 
-- micromamba / conda-forge for GCC 12.2, binutils, and a glibc 2.28 sysroot;
-- AlmaLinux 8 runtime packages for the RHEL 8 ABI baseline;
-- GCC Toolset 12 libstdc++_nonshared.a for the compatibility strategy used by RHEL 8 GCC Toolset builds.
-
-The installed toolchain name is:
+Installed identity:
 
 ```text
 linux-x86_64-rhel8-gcc-toolset12
 ```
 
-Its intended compatibility ceiling is:
-
-```text
-GLIBC   <= 2.28
-GLIBCXX <= 3.4.25
-```
-
-Those values are a target, not an assumption: final application binaries should always be checked with `readelf --version-info`.
-
-## Why this exists
-
-Modern projects such as Node.js 24 need a C++20-capable compiler and modern libstdc++ headers. Simply compiling with GCC 8 headers is not viable.
-
-RHEL 8's GCC Toolset model solves the problem differently:
-
-1. compile with GCC 12 and GCC 12 C++ headers;
-2. dynamically link the RHEL 8 / GCC 8-era `libstdc++.so.6`;
-3. statically supplement newer implementation pieces from `libstdc++_nonshared.a`.
-
-This repository reproduces that model while using a micromamba-managed GCC/sysroot as the base.
-
-## Requirements
-
-On Arch Linux / WSL Arch:
-
-```bash
-sudo pacman -S --needed curl cpio rpm-tools zstd
-```
-
-You also need `micromamba` available on `PATH`.
-
-The build script uses `sudo` only when the destination prefix requires it.
-
-## Build
-
-```bash
-./scripts/build-toolchain.sh
-```
-
-Default installation path:
+Default release prefix:
 
 ```text
 /opt/toolchains/linux-x86_64-rhel8-gcc-toolset12
 ```
 
-To rebuild an existing prefix:
+Target compatibility ceilings:
+
+```text
+GLIBC   <= 2.28
+GLIBCXX <= 3.4.25
+CXXABI  <= 1.3.11
+GCC ABI <= 7.0.0
+```
+
+These are release gates, not promises about every application built with the toolchain. Final native artifacts must still be inspected because project code and linked third-party libraries can introduce stricter requirements.
+
+## Why
+
+Projects such as Node.js 24 / V8 need a modern C++20 compiler and modern libstdc++ headers. Building them with GCC 8 headers is not viable because APIs such as `<version>`, `std::span`, ranges, `std::atomic_ref`, and `std::erase_if` are required.
+
+The compatibility model follows the RHEL 8 GCC Toolset approach:
+
+```text
+GCC 12 compiler + GCC 12 C++ headers
+        +
+RHEL 8 / GCC 8-era libstdc++.so.6 and libgcc_s.so.1
+        +
+GCC Toolset 12 libstdc++_nonshared.a
+```
+
+The target `libstdc++.so` is a linker script:
+
+```text
+INPUT ( libstdc++.so.6 -lstdc++_nonshared )
+```
+
+and the target `libgcc_s.so` is:
+
+```text
+GROUP ( libgcc_s.so.1 -lgcc )
+```
+
+The shared runtimes come from pinned AlmaLinux 8.10 RPMs. Newer implementation pieces required by GCC 12 headers can be supplied from `libstdc++_nonshared.a` without raising the target shared `GLIBCXX` ceiling.
+
+## Reproducibility model
+
+Release builds do not run the conda solver.
+
+The repository contains:
+
+- `manifests/toolchain.json`: toolchain identity, ABI policy, RPM URLs/hashes, and the pinned micromamba bootstrap;
+- `manifests/conda-linux-64.lock`: a complete `@EXPLICIT` conda-forge package set including exact build strings and SHA-256 hashes;
+- SHA-256-pinned AlmaLinux 8.10 RPM inputs;
+- a pinned micromamba release binary and SHA-256.
+
+The build also normalizes volatile `conda-meta` fields that otherwise contain build timestamps, local cache paths, or the maintainer's checkout path.
+
+Packaging normalizes archive ordering, mtime, uid, and gid through `SOURCE_DATE_EPOCH` and uses single-threaded zstd compression. This makes repeated packaging with the same prefix and packaging tool versions deterministic.
+
+This is not claimed to be a fully hermetic build across arbitrary host distributions: host `tar`, `zstd`, `rpm2cpio`, and `cpio` are still supplied by the runner. `RELEASE-METADATA.json` records relevant packaging versions. See [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+
+## Build
+
+Required host tools:
+
+```text
+curl
+cpio
+rpm2cpio
+python3
+zstd
+micromamba
+```
+
+Build the fixed-prefix release toolchain:
+
+```bash
+./scripts/build-toolchain.sh
+```
+
+Rebuild an existing prefix:
 
 ```bash
 ./scripts/build-toolchain.sh --force
 ```
 
-A custom prefix can be supplied for experiments:
+A custom prefix is supported for local experiments:
 
 ```bash
 ./scripts/build-toolchain.sh --prefix /tmp/rhel8-gcc-toolset12
 ```
 
-The default `/opt/toolchains` location is recommended for release builds because conda compiler packages are prefix-aware.
+Release archives are intentionally built for the default `/opt/toolchains/...` prefix. The conda compiler packages contain prefix-aware content, so the archive is not advertised as arbitrarily relocatable.
 
 ## Verify
 
@@ -77,31 +109,42 @@ The default `/opt/toolchains` location is recommended for release builds because
 ./scripts/verify-toolchain.sh
 ```
 
-The verification probe checks:
+The verification gate checks:
 
-- C++20 `<version>`, `std::span`, ranges and condition variables;
-- `GLIBC <= 2.28`;
-- `GLIBCXX <= 3.4.25`;
-- no toolchain-prefix RPATH/RUNPATH in the probe;
-- the GCC 8-era runtime and GCC Toolset compatibility layer are active.
+- GCC version, target triple, and compiler sysroot;
+- C++20 headers/features including `std::span`, ranges, `std::atomic_ref`, and `std::erase_if`;
+- highest required `GLIBC`, `GLIBCXX`, `CXXABI`, and GCC symbol versions;
+- target `libstdc++.so.6` / `libgcc_s.so.1` export ceilings;
+- exact ELF interpreter;
+- the expected `DT_NEEDED` set;
+- absence of `RPATH` / `RUNPATH`;
+- compiler include/linker inputs staying inside the toolchain prefix/sysroot;
+- absence of absolute symlinks in the prefix;
+- absence of volatile conda package-cache paths and transaction timestamps.
 
-## Use
+A typical probe currently requires substantially less than the policy ceilings, but that is only the probe's requirement. Consumers must inspect their final binaries separately.
 
-The toolchain exposes normal short command names under its `bin` directory, including `gcc`, `g++`, `cc`, `c++`, `ld`, `ar`, and `readelf`.
-
-Configure the toolchain manually:
+## Package
 
 ```bash
-export PATH=/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12/bin:$PATH
-export CC=/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12/bin/cc
-export CXX=/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12/bin/c++
+./scripts/package-toolchain.sh
 ```
 
-Do not use `micromamba activate` for release builds. Activation can inject prefix library paths through build flags and defeat the intended target ABI layer.
+Release output under `dist/` includes:
+
+```text
+linux-x86_64-rhel8-gcc-toolset12.tar.zst
+linux-x86_64-rhel8-gcc-toolset12.tar.zst.sha256
+linux-x86_64-rhel8-gcc-toolset12.spdx.json
+RELEASE-METADATA.json
+SHA256SUMS
+```
+
+The SPDX 2.3 SBOM describes the exact conda package records plus the AlmaLinux RPM compatibility components.
 
 ## GitHub Action
 
-Consumers do not need to reproduce the download or environment setup logic. A release tag can be used directly as a composite action:
+Consumers can install the matching release directly:
 
 ```yaml
 - name: Set up RHEL 8 GCC Toolset 12
@@ -109,18 +152,11 @@ Consumers do not need to reproduce the download or environment setup logic. A re
   uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
 ```
 
-The action:
+The Action tag and toolchain Release tag are intentionally identical. It downloads the release through the GitHub Releases API, verifies SHA-256, extracts into an unprivileged temporary directory, rejects escaping/absolute symlinks, verifies the embedded manifest, and only then installs the fixed prefix under `/opt/toolchains`.
 
-1. downloads the toolchain archive and checksum from the matching GitHub Release;
-2. verifies SHA-256;
-3. installs the prefix at `/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12`;
-4. adds the toolchain `bin` directory to `GITHUB_PATH`;
-5. exports `CC`, `CXX`, `AR`, `LD`, and the other binutils through `GITHUB_ENV`;
-6. runs the ABI verification probe by default.
+It exports `PATH`, `CC`, `CXX`, `CPP`, `GCC`, `GXX`, and the common binutils variables, then runs the ABI verification gate by default.
 
-The action tag and toolchain release tag are intentionally the same. For example, `@v1.0.0` installs the `v1.0.0` Release asset.
-
-It exposes:
+Outputs:
 
 ```text
 prefix
@@ -128,61 +164,79 @@ version
 identity
 ```
 
-The `identity` output is intended for build cache keys:
+The `identity` output is intended for consumer cache keys:
 
 ```yaml
-- name: Restore native cache
-  uses: actions/cache/restore@v4
-  with:
-    path: nodejs-jni/sdk/linux-x86_64
-    key: libnode-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('nodejs-jni/node-sdk.json') }}
+key: native-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('your-inputs.json') }}
 ```
 
-For unusual cases, the release can be overridden explicitly:
+Optional inputs:
 
 ```yaml
 - uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
   with:
     version: v1.0.0
+    repository: EdgeAtZero/rhel8-gcc-toolset12-toolchain
     verify: 'true'
 ```
 
-The action supports Linux x86_64 runners only. Because the compiler prefix is not arbitrarily relocatable, installation is intentionally fixed under `/opt/toolchains`.
+For a private release repository, pass `github-token` with `contents:read` access to that repository.
 
-## Package
+There is intentionally no arbitrary `install-prefix` input today because the release prefix is not generally relocatable. There is also no final-toolchain Action cache input: Release assets are already immutable distribution objects, while consumers can use the stable `identity` output to cache their own build products.
 
-After verification:
+## GitHub Actions and supply chain
+
+The repository workflow:
+
+1. caches only source/package downloads, not the assembled final toolchain;
+2. installs a SHA-256-pinned micromamba binary;
+3. builds from the explicit conda lock and pinned RPMs;
+4. runs ABI verification;
+5. creates deterministic archive metadata, checksums, SPDX SBOM, and release metadata;
+6. uploads workflow artifacts;
+7. on `v*` tags, creates GitHub artifact attestations for both SLSA build provenance and the SBOM;
+8. publishes the already-built files to the matching GitHub Release.
+
+Third-party GitHub Actions are pinned to commit SHAs rather than mutable major tags.
+
+## Updating inputs
+
+Input updates are deliberate release engineering changes, not automatic patch bumps.
+
+For conda-forge:
+
+1. solve a candidate environment in a temporary prefix using the intended high-level compiler/sysroot requirements;
+2. run the full ABI verification against that candidate;
+3. export the exact package records:
 
 ```bash
-./scripts/package-toolchain.sh
+./scripts/export-conda-lock.py /path/to/candidate manifests/conda-linux-64.lock
 ```
 
-This creates a `.tar.zst` plus SHA-256 checksum under `dist/`.
+4. rebuild from the exported lock and verify again.
 
-The archive is built for installation under:
+For AlmaLinux RPMs, update `manifests/toolchain.json` only after checking the new payload, SHA-256, exported ABI ceilings, and compatibility probe. An automatic updater may open a PR in the future, but it should never auto-merge an ABI baseline change.
+
+## Future conda channel
+
+The GitHub Release tarball remains the primary distribution model for now.
+
+A future channel should not overwrite files owned by conda-forge packages in-place. A plausible model is:
 
 ```text
-/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12
+meta package
++
+compat runtime package
++
+compiler wrapper / activation package
 ```
 
-It should not be treated as an arbitrary relocatable compiler prefix.
+That design needs explicit package ownership, uninstall/update behavior, solver constraints, prefix relocation rules, sysroot behavior, activation semantics, and licensing before it is suitable for publication.
 
-## GitHub Actions
+## Licensing and provenance
 
-`.github/workflows/build.yml` reproduces and verifies the toolchain on GitHub-hosted Linux runners.
+The MIT license covers the repository's scripts and documentation only.
 
-- pushes and pull requests build and verify it;
-- workflow dispatch can be run manually;
-- tags matching `v*` additionally upload the packaged toolchain to a GitHub Release.
+Generated toolchains contain GCC, glibc/sysroot content, libstdc++, libgcc, binutils, conda-forge packages, and AlmaLinux RPM contents under their own licenses and redistribution terms. The SPDX SBOM is inventory/provenance data and is not a substitute for satisfying those licenses or corresponding-source obligations.
 
-## Publishing for micromamba
-
-The current repository uses micromamba as the reproducible base environment resolver and produces a ready-to-install toolchain archive.
-
-A future conda channel is also possible, but it should be implemented as a dedicated compatibility/wrapper package rather than by blindly overwriting files owned by conda-forge compiler packages. This repository intentionally keeps the first public format simple and auditable: pinned inputs, a deterministic assembly script, ABI verification, and a packaged prefix.
-
-## Provenance
-
-Pinned AlmaLinux 8 packages are downloaded from the official AlmaLinux repositories and verified by SHA-256.
-
-The repository's MIT license covers only the scripts and documentation in this repository. The generated toolchain contains third-party software under its own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).
+See [THIRD_PARTY.md](THIRD_PARTY.md).

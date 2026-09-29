@@ -6,6 +6,14 @@ inputs:
     description: Toolchain release tag. Defaults to the action ref, e.g. v1.0.0 when using @v1.0.0.
     required: false
     default: ''
+  repository:
+    description: Release repository in owner/name form. Defaults to the repository containing this action.
+    required: false
+    default: ''
+  github-token:
+    description: Optional token with contents:read access to the release repository. Required for private releases.
+    required: false
+    default: ''
   verify:
     description: Run the toolchain ABI verification probe after installation.
     required: false
@@ -30,8 +38,11 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         ACTION_REF: ${{ github.action_ref }}
         ACTION_REPOSITORY: ${{ github.action_repository }}
+        API_URL: ${{ github.api_url }}
       run: |
         set -euo pipefail
 
@@ -46,17 +57,29 @@ runs:
             ;;
         esac
 
-        version="${INPUT_VERSION}"
-        if [[ -z "${version}" ]]; then
-          version="${ACTION_REF}"
-        fi
+        version="${INPUT_VERSION:-${ACTION_REF:-}}"
         if [[ -z "${version}" || "${version}" != v* ]]; then
           echo "A release tag is required." >&2
           echo "Use this action through a release tag such as @v1.0.0, or set the 'version' input." >&2
           exit 1
         fi
 
-        for command in curl sha256sum tar sudo; do
+        release_repo="${INPUT_REPOSITORY:-${ACTION_REPOSITORY:-}}"
+        if [[ ! "${release_repo}" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+          echo "Invalid release repository: ${release_repo:-<empty>}" >&2
+          exit 1
+        fi
+
+        SUDO=()
+        if ((EUID != 0)); then
+          command -v sudo >/dev/null 2>&1 || {
+            echo "sudo is required to install under /opt/toolchains." >&2
+            exit 1
+          }
+          SUDO=(sudo)
+        fi
+
+        for command in curl sha256sum tar python3 find realpath readlink cmp; do
           command -v "${command}" >/dev/null 2>&1 || {
             echo "Required command not found: ${command}" >&2
             exit 1
@@ -64,34 +87,145 @@ runs:
         done
 
         if ! command -v zstd >/dev/null 2>&1; then
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zstd
+          if command -v apt-get >/dev/null 2>&1; then
+            "${SUDO[@]}" apt-get update
+            "${SUDO[@]}" apt-get install -y --no-install-recommends zstd
+          else
+            echo "zstd is required and could not be installed automatically (apt-get not found)." >&2
+            exit 1
+          fi
         fi
 
         download_dir="${RUNNER_TEMP}/rhel8-gcc-toolset12-toolchain-${version}"
         rm -rf "${download_dir}"
-        mkdir -p "${download_dir}"
+        mkdir -p "${download_dir}/extract"
 
         asset="${name}.tar.zst"
         checksum="${asset}.sha256"
-        base="https://github.com/${ACTION_REPOSITORY}/releases/download/${version}"
+        release_json="${download_dir}/release.json"
+        api_base="${API_URL:-https://api.github.com}"
 
-        curl -fL --retry 3 --retry-all-errors           "${base}/${asset}"           -o "${download_dir}/${asset}"
-        curl -fL --retry 3 --retry-all-errors           "${base}/${checksum}"           -o "${download_dir}/${checksum}"
+        curl_args=(
+          --fail
+          --location
+          --retry 5
+          --retry-all-errors
+          --proto '=https'
+          --tlsv1.2
+          -H 'Accept: application/vnd.github+json'
+          -H 'X-GitHub-Api-Version: 2022-11-28'
+        )
+        if [[ -n "${INPUT_GITHUB_TOKEN}" ]]; then
+          curl_args+=(-H "Authorization: Bearer ${INPUT_GITHUB_TOKEN}")
+        fi
+
+        curl "${curl_args[@]}"           "${api_base}/repos/${release_repo}/releases/tags/${version}"           -o "${release_json}"
+
+        mapfile -d '' -t asset_ids < <(
+          python3 - "${release_json}" "${asset}" "${checksum}" <<'PY'
+        import json
+        import sys
+
+        release_file, archive_name, checksum_name = sys.argv[1:4]
+        with open(release_file, encoding="utf-8") as f:
+            release = json.load(f)
+
+        assets = {asset["name"]: asset["id"] for asset in release.get("assets", [])}
+        missing = [name for name in (archive_name, checksum_name) if name not in assets]
+        if missing:
+            raise SystemExit("Missing release assets: " + ", ".join(missing))
+
+        for name in (archive_name, checksum_name):
+            print(assets[name], end="\0")
+        PY
+        )
+
+        (("${#asset_ids[@]}" == 2)) || {
+          echo "Failed to resolve release assets." >&2
+          exit 1
+        }
+
+        download_asset() {
+          local asset_id="$1"
+          local destination="$2"
+          local args=(
+            --fail
+            --location
+            --retry 5
+            --retry-all-errors
+            --proto '=https'
+            --tlsv1.2
+            -H 'Accept: application/octet-stream'
+            -H 'X-GitHub-Api-Version: 2022-11-28'
+          )
+          if [[ -n "${INPUT_GITHUB_TOKEN}" ]]; then
+            args+=(-H "Authorization: Bearer ${INPUT_GITHUB_TOKEN}")
+          fi
+
+          curl "${args[@]}"             "${api_base}/repos/${release_repo}/releases/assets/${asset_id}"             -o "${destination}"
+        }
+
+        download_asset "${asset_ids[0]}" "${download_dir}/${asset}"
+        download_asset "${asset_ids[1]}" "${download_dir}/${checksum}"
 
         (
           cd "${download_dir}"
+          [[ "$(wc -l <"${checksum}")" -eq 1 ]] || {
+            echo "Checksum file must contain exactly one entry." >&2
+            exit 1
+          }
+          read -r checksum_hash checksum_file checksum_extra <"${checksum}"
+          if [[ ! "${checksum_hash}" =~ ^[0-9a-fA-F]{64}$ ]] ||
+             [[ "${checksum_file}" != "${asset}" ]] ||
+             [[ -n "${checksum_extra:-}" ]]; then
+            echo "Checksum file does not describe exactly the expected asset." >&2
+            exit 1
+          fi
           sha256sum -c "${checksum}"
         )
 
-        sudo mkdir -p /opt/toolchains
-        sudo rm -rf "${prefix}"
-        sudo tar --zstd -xf "${download_dir}/${asset}" -C /opt/toolchains
+        zstd -dc "${download_dir}/${asset}" |
+          tar -xf - -C "${download_dir}/extract" --no-same-owner --no-same-permissions
 
-        [[ -x "${prefix}/bin/gcc" ]] || {
-          echo "Installed compiler was not found: ${prefix}/bin/gcc" >&2
+        mapfile -t top_entries < <(
+          find "${download_dir}/extract" -mindepth 1 -maxdepth 1 -printf '%f\n'
+        )
+        if (("${#top_entries[@]}" != 1)) || [[ "${top_entries[0]}" != "${name}" ]]; then
+          echo "Archive must contain exactly one top-level directory named ${name}." >&2
+          printf 'Found: %s\n' "${top_entries[@]:-<none>}" >&2
+          exit 1
+        fi
+
+        extracted="${download_dir}/extract/${name}"
+        while IFS= read -r -d '' link; do
+          target="$(readlink "${link}")"
+          if [[ "${target}" == /* ]]; then
+            echo "Archive contains an absolute symlink: ${link} -> ${target}" >&2
+            exit 1
+          fi
+
+          resolved="$(realpath -m "$(dirname "${link}")/${target}")"
+          case "${resolved}" in
+            "${extracted}"|"${extracted}"/*) ;;
+            *)
+              echo "Archive symlink escapes toolchain root: ${link} -> ${target}" >&2
+              exit 1
+              ;;
+          esac
+        done < <(find "${extracted}" -type l -print0)
+
+        [[ -x "${extracted}/bin/gcc" ]] || {
+          echo "Compiler not found in release archive." >&2
           exit 1
         }
+        cmp -s           "${extracted}/TOOLCHAIN-MANIFEST.json"           "${{ github.action_path }}/manifests/toolchain.json" || {
+          echo "Release archive manifest does not match the action manifest." >&2
+          exit 1
+        }
+
+        "${SUDO[@]}" mkdir -p /opt/toolchains
+        "${SUDO[@]}" rm -rf "${prefix}"
+        "${SUDO[@]}" cp -a "${extracted}" "${prefix}"
 
         echo "${prefix}/bin" >> "${GITHUB_PATH}"
 
@@ -125,6 +259,7 @@ runs:
         "${prefix}/bin/gcc" --version | head -n 1
         echo "Toolchain: ${name}"
         echo "Release: ${version}"
+        echo "Repository: ${release_repo}"
         echo "Prefix: ${prefix}"
 
     - name: Verify toolchain ABI

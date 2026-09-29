@@ -1,30 +1,94 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
+export TZ=UTC
+umask 022
 
-TOOLCHAIN_NAME="linux-x86_64-rhel8-gcc-toolset12"
-DEFAULT_PREFIX="/opt/toolchains/$TOOLCHAIN_NAME"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MANIFEST="$REPO_ROOT/manifests/toolchain.json"
+
+for cmd in python3 micromamba curl sha256sum rpm2cpio cpio install ln rm mkdir id readlink grep; do
+  command -v "$cmd" >/dev/null 2>&1 || {
+    echo "Required command not found: $cmd" >&2
+    exit 1
+  }
+done
+
+mapfile -d '' -t manifest_values < <(
+  python3 - "$MANIFEST" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+
+values = [
+    data["name"],
+    data["target"],
+    data["default_prefix"],
+    data["compiler"]["gcc_version"],
+    data["compiler"]["sysroot_version"],
+    data["compiler"]["conda_lock"],
+    data["abi"]["glibc_max"],
+    data["abi"]["glibcxx_max"],
+    data["abi"]["cxxabi_max"],
+    data["abi"]["gcc_max"],
+    data["abi"]["interpreter"],
+    data["abi"]["libstdcxx_runtime"],
+]
+
+for key in ("libstdcxx", "libgcc", "libstdcxx_nonshared"):
+    rpm = data["rpms"][key]
+    values.extend((rpm["filename"], rpm["url"], rpm["sha256"], rpm["payload"]))
+
+for value in values:
+    print(value, end="\0")
+PY
+)
+
+(("${#manifest_values[@]}" == 24)) || {
+  echo "Invalid toolchain manifest: expected 24 values, got ${#manifest_values[@]}." >&2
+  exit 1
+}
+
+TOOLCHAIN_NAME="${manifest_values[0]}"
+TARGET="${manifest_values[1]}"
+DEFAULT_PREFIX="${manifest_values[2]}"
+GCC_VERSION="${manifest_values[3]}"
+SYSROOT_VERSION="${manifest_values[4]}"
+CONDA_LOCK_REL="${manifest_values[5]}"
+GLIBC_MAX="${manifest_values[6]}"
+GLIBCXX_MAX="${manifest_values[7]}"
+CXXABI_MAX="${manifest_values[8]}"
+GCC_ABI_MAX="${manifest_values[9]}"
+INTERPRETER="${manifest_values[10]}"
+LIBSTDCXX_RUNTIME="${manifest_values[11]}"
+
+LIBSTDCXX_RPM="${manifest_values[12]}"
+LIBSTDCXX_URL="${manifest_values[13]}"
+LIBSTDCXX_SHA256="${manifest_values[14]}"
+LIBSTDCXX_PAYLOAD="${manifest_values[15]}"
+
+LIBGCC_RPM="${manifest_values[16]}"
+LIBGCC_URL="${manifest_values[17]}"
+LIBGCC_SHA256="${manifest_values[18]}"
+LIBGCC_PAYLOAD="${manifest_values[19]}"
+
+NONSHARED_RPM="${manifest_values[20]}"
+NONSHARED_URL="${manifest_values[21]}"
+NONSHARED_SHA256="${manifest_values[22]}"
+NONSHARED_PAYLOAD="${manifest_values[23]}"
+
+CONDA_LOCK="$REPO_ROOT/$CONDA_LOCK_REL"
 PREFIX="$DEFAULT_PREFIX"
 FORCE=0
-
-GCC_VERSION="12.2.0"
-SYSROOT_VERSION="2.28"
-TARGET="x86_64-conda-linux-gnu"
-
-ALMA_BASEOS="https://repo.almalinux.org/almalinux/8/BaseOS/x86_64/os/Packages"
-ALMA_APPSTREAM="https://repo.almalinux.org/almalinux/8/AppStream/x86_64/os/Packages"
-
-LIBSTDCXX_RPM="libstdc++-8.5.0-28.el8_10.alma.1.x86_64.rpm"
-LIBSTDCXX_SHA256="0302b9006d719a31dd51aeaf31fec03d70aad5c318674537bd80c49f9174b066"
-LIBGCC_RPM="libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm"
-LIBGCC_SHA256="629a08266f7c1397c00d7c32c0ac6d110fe56e993dcf94024559aa28a570f18d"
-GTS_RPM="gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm"
-GTS_SHA256="acdc19b1ee0b01cbf06377522bd412c20ca2bdbda68630ea6c9ae9ca7c344711"
 
 usage() {
   cat <<EOF
 Usage: $0 [--prefix PATH] [--force]
 
-Build the RHEL 8 / GCC Toolset 12 compatibility toolchain.
+Build the RHEL 8 / GCC Toolset 12 compatibility toolchain from pinned inputs.
 
 Options:
   --prefix PATH   Installation prefix (default: $DEFAULT_PREFIX)
@@ -36,6 +100,10 @@ EOF
 while (($#)); do
   case "$1" in
     --prefix)
+      [[ $# -ge 2 ]] || {
+        echo "--prefix requires a value." >&2
+        exit 2
+      }
       PREFIX="$2"
       shift 2
       ;;
@@ -59,30 +127,54 @@ while (($#)); do
   esac
 done
 
-for cmd in micromamba curl sha256sum rpm2cpio cpio python3; do
-  command -v "$cmd" >/dev/null 2>&1 || {
-    echo "Required command not found: $cmd" >&2
-    exit 1
-  }
-done
+[[ -f "$CONDA_LOCK" ]] || {
+  echo "Conda explicit lock not found: $CONDA_LOCK" >&2
+  exit 1
+}
+grep -Fx '@EXPLICIT' "$CONDA_LOCK" >/dev/null || {
+  echo "Conda lock is not an explicit specification: $CONDA_LOCK" >&2
+  exit 1
+}
 
-SUDO=()
-if [[ "$PREFIX" == /opt/* && ! -w "$(dirname "$PREFIX")" ]]; then
+require_sudo() {
   command -v sudo >/dev/null 2>&1 || {
-    echo "sudo is required to install under /opt." >&2
+    echo "sudo is required to install under: $PREFIX" >&2
     exit 1
   }
-  SUDO=(sudo)
-fi
+}
+
+prefix_parent="$(dirname "$PREFIX")"
 
 if [[ -e "$PREFIX" ]]; then
   if ((FORCE)); then
-    "${SUDO[@]}" rm -rf "$PREFIX"
+    if [[ -w "$prefix_parent" ]]; then
+      rm -rf "$PREFIX"
+    else
+      require_sudo
+      sudo rm -rf "$PREFIX"
+    fi
   else
     echo "Prefix already exists: $PREFIX" >&2
     echo "Use --force to rebuild it." >&2
     exit 1
   fi
+fi
+
+if [[ ! -d "$prefix_parent" ]]; then
+  parent_parent="$(dirname "$prefix_parent")"
+  if [[ -w "$parent_parent" ]]; then
+    mkdir -p "$prefix_parent"
+  else
+    require_sudo
+    sudo mkdir -p "$prefix_parent"
+  fi
+fi
+
+if [[ -w "$prefix_parent" ]]; then
+  mkdir -p "$PREFIX"
+else
+  require_sudo
+  sudo install -d -o "$(id -u)" -g "$(id -g)" "$PREFIX"
 fi
 
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/rhel8-gcc-toolset12-toolchain"
@@ -98,7 +190,7 @@ download_and_verify() {
 
   if [[ ! -f "$dst" ]] || ! printf '%s  %s\n' "$sha256" "$dst" | sha256sum -c - >/dev/null 2>&1; then
     rm -f "$dst"
-    curl -fL --retry 3 "$url/$file" -o "$dst"
+    curl --fail --location --retry 5 --retry-all-errors --proto '=https' --tlsv1.2 "$url" -o "$dst"
   fi
 
   printf '%s  %s\n' "$sha256" "$dst" | sha256sum -c -
@@ -114,49 +206,87 @@ extract_rpm() {
   )
 }
 
-download_and_verify "$ALMA_BASEOS" "$LIBSTDCXX_RPM" "$LIBSTDCXX_SHA256"
-download_and_verify "$ALMA_BASEOS" "$LIBGCC_RPM" "$LIBGCC_SHA256"
-download_and_verify "$ALMA_APPSTREAM" "$GTS_RPM" "$GTS_SHA256"
+download_and_verify "$LIBSTDCXX_URL" "$LIBSTDCXX_RPM" "$LIBSTDCXX_SHA256"
+download_and_verify "$LIBGCC_URL" "$LIBGCC_RPM" "$LIBGCC_SHA256"
+download_and_verify "$NONSHARED_URL" "$NONSHARED_RPM" "$NONSHARED_SHA256"
 
 extract_rpm "$CACHE_ROOT/$LIBSTDCXX_RPM" "$WORK_DIR/libstdcxx"
 extract_rpm "$CACHE_ROOT/$LIBGCC_RPM" "$WORK_DIR/libgcc"
-extract_rpm "$CACHE_ROOT/$GTS_RPM" "$WORK_DIR/gts"
+extract_rpm "$CACHE_ROOT/$NONSHARED_RPM" "$WORK_DIR/nonshared"
 
-MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$CACHE_ROOT/mamba-root}"
-"${SUDO[@]}" env MAMBA_ROOT_PREFIX="$MAMBA_ROOT_PREFIX" micromamba create -y   -p "$PREFIX"   -c conda-forge   --strict-channel-priority   "gcc_linux-64=$GCC_VERSION"   "gxx_linux-64=$GCC_VERSION"   "sysroot_linux-64=$SYSROOT_VERSION"   "libstdcxx-devel_linux-64=$GCC_VERSION"   "libgcc-devel_linux-64=$GCC_VERSION"   binutils_linux-64
+for payload in   "$WORK_DIR/libstdcxx/$LIBSTDCXX_PAYLOAD"   "$WORK_DIR/libgcc/$LIBGCC_PAYLOAD"   "$WORK_DIR/nonshared/$NONSHARED_PAYLOAD"; do
+  [[ -f "$payload" ]] || {
+    echo "Expected RPM payload was not found: $payload" >&2
+    exit 1
+  }
+done
+
+MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$CACHE_ROOT/mamba-root-v1}"
+export MAMBA_ROOT_PREFIX
+
+micromamba --no-rc create -y -p "$PREFIX" -f "$CONDA_LOCK"
+
+compiler="$PREFIX/bin/$TARGET-gcc"
+[[ -x "$compiler" ]] || {
+  echo "Pinned compiler was not installed: $compiler" >&2
+  exit 1
+}
+
+actual_target="$("$compiler" -dumpmachine)"
+[[ "$actual_target" == "$TARGET" ]] || {
+  echo "Unexpected compiler target: $actual_target (expected $TARGET)" >&2
+  exit 1
+}
+
+actual_gcc="$("$compiler" -dumpfullversion)"
+[[ "$actual_gcc" == "$GCC_VERSION" ]] || {
+  echo "Unexpected GCC version: $actual_gcc (expected $GCC_VERSION)" >&2
+  exit 1
+}
 
 SYSROOT="$PREFIX/$TARGET/sysroot"
 TARGET_LIB="$PREFIX/$TARGET/lib"
 GCC_LIB="$PREFIX/lib/gcc/$TARGET/$GCC_VERSION"
 SPECS="$GCC_LIB/specs"
 
-"${SUDO[@]}" install -D -m 0755   "$WORK_DIR/libstdcxx/usr/lib64/libstdc++.so.6.0.25"   "$SYSROOT/usr/lib64/libstdc++.so.6.0.25"
-"${SUDO[@]}" ln -sfn libstdc++.so.6.0.25 "$SYSROOT/usr/lib64/libstdc++.so.6"
+actual_sysroot="$(readlink -f "$("$compiler" -print-sysroot)")"
+expected_sysroot="$(readlink -f "$SYSROOT")"
+[[ "$actual_sysroot" == "$expected_sysroot" ]] || {
+  echo "Unexpected compiler sysroot: $actual_sysroot" >&2
+  echo "Expected: $expected_sysroot" >&2
+  exit 1
+}
 
-"${SUDO[@]}" install -D -m 0755   "$WORK_DIR/libgcc/lib64/libgcc_s.so.1"   "$SYSROOT/usr/lib64/libgcc_s.so.1"
+install -D -m 0755   "$WORK_DIR/libstdcxx/$LIBSTDCXX_PAYLOAD"   "$SYSROOT/usr/lib64/$LIBSTDCXX_RUNTIME"
+ln -sfn "$LIBSTDCXX_RUNTIME" "$SYSROOT/usr/lib64/libstdc++.so.6"
 
-"${SUDO[@]}" install -m 0644   "$WORK_DIR/gts/opt/rh/gcc-toolset-12/root/usr/lib/gcc/x86_64-redhat-linux/12/libstdc++_nonshared.a"   "$GCC_LIB/libstdc++_nonshared.a"
+install -D -m 0755   "$WORK_DIR/libgcc/$LIBGCC_PAYLOAD"   "$SYSROOT/usr/lib64/libgcc_s.so.1"
 
-"${SUDO[@]}" rm -f   "$TARGET_LIB/libstdc++.so"   "$TARGET_LIB/libstdc++.so.6"   "$TARGET_LIB/libstdc++.so.6.0.30"
+install -m 0644   "$WORK_DIR/nonshared/$NONSHARED_PAYLOAD"   "$GCC_LIB/libstdc++_nonshared.a"
+
+rm -f "$TARGET_LIB/libstdc++.so" "$TARGET_LIB/libstdc++.so.6" "$TARGET_LIB"/libstdc++.so.6.*
 
 cat >"$WORK_DIR/libstdc++.so" <<'EOF'
 /* RHEL 8 / GCC Toolset 12 compatibility linker script. */
 INPUT ( libstdc++.so.6 -lstdc++_nonshared )
 EOF
-"${SUDO[@]}" install -m 0644 "$WORK_DIR/libstdc++.so" "$TARGET_LIB/libstdc++.so"
-"${SUDO[@]}" ln -sfn "$SYSROOT/usr/lib64/libstdc++.so.6" "$TARGET_LIB/libstdc++.so.6"
+install -m 0644 "$WORK_DIR/libstdc++.so" "$TARGET_LIB/libstdc++.so"
+ln -sfn "../sysroot/usr/lib64/libstdc++.so.6" "$TARGET_LIB/libstdc++.so.6"
 
-"${SUDO[@]}" rm -f "$TARGET_LIB/libgcc_s.so" "$TARGET_LIB/libgcc_s.so.1"
+rm -f "$TARGET_LIB/libgcc_s.so" "$TARGET_LIB/libgcc_s.so.1"
 cat >"$WORK_DIR/libgcc_s.so" <<'EOF'
 /* RHEL 8 compatibility linker script. */
 GROUP ( libgcc_s.so.1 -lgcc )
 EOF
-"${SUDO[@]}" install -m 0644 "$WORK_DIR/libgcc_s.so" "$TARGET_LIB/libgcc_s.so"
-"${SUDO[@]}" ln -sfn "$SYSROOT/usr/lib64/libgcc_s.so.1" "$TARGET_LIB/libgcc_s.so.1"
+install -m 0644 "$WORK_DIR/libgcc_s.so" "$TARGET_LIB/libgcc_s.so"
+ln -sfn "../sysroot/usr/lib64/libgcc_s.so.1" "$TARGET_LIB/libgcc_s.so.1"
 
-if [[ -f "$SPECS" ]]; then
-  "${SUDO[@]}" cp -a "$SPECS" "$SPECS.conda.bak"
-  python3 - "$SPECS" "$PREFIX" "$WORK_DIR/specs" <<'PY'
+[[ -f "$SPECS" ]] || {
+  echo "Expected GCC specs file not found: $SPECS" >&2
+  exit 1
+}
+
+python3 - "$SPECS" "$PREFIX" "$WORK_DIR/specs" <<'PY'
 import pathlib
 import sys
 
@@ -164,16 +294,34 @@ src = pathlib.Path(sys.argv[1])
 prefix = sys.argv[2]
 dst = pathlib.Path(sys.argv[3])
 
-text = src.read_text()
-fragment = f" %{{!static:-rpath {prefix}/lib}}"
-if fragment not in text:
-    raise SystemExit(f"Expected conda RPATH fragment not found: {fragment}")
-dst.write_text(text.replace(fragment, ""))
+text = src.read_text(encoding="utf-8")
+marker = "*link_command:\n"
+start = text.find(marker)
+if start < 0:
+    raise SystemExit("GCC specs does not contain *link_command")
+
+end = text.find("\n*", start + len(marker))
+if end < 0:
+    end = len(text)
+
+section = text[start:end]
+needle = f"%{{!static:-rpath {prefix}/lib}}"
+count = section.count(needle)
+if count != 1:
+    raise SystemExit(
+        f"Expected exactly one conda prefix RPATH fragment in *link_command, found {count}: {needle}"
+    )
+
+patched = section.replace(needle, "", 1)
+dst.write_text(text[:start] + patched + text[end:], encoding="utf-8")
 PY
-  "${SUDO[@]}" install -m 0644 "$WORK_DIR/specs" "$SPECS"
+install -m 0644 "$WORK_DIR/specs" "$SPECS"
+
+if "$compiler" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; then
+  echo "Conda prefix RPATH is still present in effective GCC specs." >&2
+  exit 1
 fi
 
-compiler="$PREFIX/bin/$TARGET-gcc"
 target="$("$compiler" -dumpmachine)"
 
 link_short() {
@@ -182,14 +330,20 @@ link_short() {
   local src="$PREFIX/bin/$target_name"
 
   [[ -e "$src" ]] || return 0
-  "${SUDO[@]}" ln -sfn "$target_name" "$PREFIX/bin/$short"
+  ln -sfn "$target_name" "$PREFIX/bin/$short"
 }
 
 for name in gcc g++ cpp ar as ld nm objcopy objdump ranlib readelf strings strip addr2line c++filt elfedit size gprof; do
   link_short "$name" "$target-$name"
 done
-"${SUDO[@]}" ln -sfn gcc "$PREFIX/bin/cc"
-"${SUDO[@]}" ln -sfn g++ "$PREFIX/bin/c++"
+ln -sfn gcc "$PREFIX/bin/cc"
+ln -sfn g++ "$PREFIX/bin/c++"
+
+install -m 0644 "$MANIFEST" "$PREFIX/TOOLCHAIN-MANIFEST.json"
+install -m 0644 "$CONDA_LOCK" "$PREFIX/CONDA-EXPLICIT.lock"
+
+manifest_sha256="$(sha256sum "$MANIFEST" | awk '{print $1}')"
+lock_sha256="$(sha256sum "$CONDA_LOCK" | awk '{print $1}')"
 
 cat >"$WORK_DIR/TOOLCHAIN-METADATA.txt" <<EOF
 Toolchain: $TOOLCHAIN_NAME
@@ -197,11 +351,13 @@ Prefix: $PREFIX
 Target: $TARGET
 GCC: $GCC_VERSION
 glibc sysroot: $SYSROOT_VERSION
+Manifest SHA-256: $manifest_sha256
+Conda explicit lock SHA-256: $lock_sha256
 
 Runtime ABI source:
-  AlmaLinux 8 BaseOS $LIBSTDCXX_RPM
-  AlmaLinux 8 BaseOS $LIBGCC_RPM
-  AlmaLinux 8 AppStream $GTS_RPM
+  $LIBSTDCXX_RPM
+  $LIBGCC_RPM
+  $NONSHARED_RPM
 
 Compatibility model:
   GCC 12 C++ headers/compiler
@@ -209,14 +365,20 @@ Compatibility model:
   + GCC Toolset 12 libstdc++_nonshared.a
 
 Expected ceilings:
-  GLIBC <= 2.28
-  GLIBCXX <= 3.4.25
+  GLIBC <= $GLIBC_MAX
+  GLIBCXX <= $GLIBCXX_MAX
+  CXXABI <= $CXXABI_MAX
+  GCC ABI <= $GCC_ABI_MAX
+  Interpreter = $INTERPRETER
 EOF
-"${SUDO[@]}" install -m 0644 "$WORK_DIR/TOOLCHAIN-METADATA.txt" "$PREFIX/TOOLCHAIN-METADATA.txt"
+install -m 0644 "$WORK_DIR/TOOLCHAIN-METADATA.txt" "$PREFIX/TOOLCHAIN-METADATA.txt"
+
+python3 "$REPO_ROOT/scripts/normalize-conda-metadata.py" "$PREFIX"
 
 echo
 echo "Created: $PREFIX"
 echo "Compiler: $("$PREFIX/bin/gcc" --version | head -n 1)"
 echo "Sysroot : $("$PREFIX/bin/gcc" -print-sysroot)"
+echo "Inputs  : $CONDA_LOCK_REL + pinned AlmaLinux 8.10 RPMs"
 echo
 echo "Run scripts/verify-toolchain.sh to validate the ABI."

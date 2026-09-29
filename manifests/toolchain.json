@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "linux-x86_64-rhel8-gcc-toolset12",
+  "target": "x86_64-conda-linux-gnu",
+  "default_prefix": "/opt/toolchains/linux-x86_64-rhel8-gcc-toolset12",
+  "compiler": {
+    "gcc_version": "12.2.0",
+    "sysroot_version": "2.28",
+    "conda_lock": "manifests/conda-linux-64.lock"
+  },
+  "abi": {
+    "glibc_max": "GLIBC_2.28",
+    "glibcxx_max": "GLIBCXX_3.4.25",
+    "cxxabi_max": "CXXABI_1.3.11",
+    "gcc_max": "GCC_7.0.0",
+    "interpreter": "/lib64/ld-linux-x86-64.so.2",
+    "libstdcxx_runtime": "libstdc++.so.6.0.25"
+  },
+  "bootstrap": {
+    "micromamba": {
+      "version": "2.8.1-0",
+      "url": "https://github.com/mamba-org/micromamba-releases/releases/download/2.8.1-0/micromamba-linux-64",
+      "sha256": "9689782d863c05a1bf5d2d371ba527104e7a4eb4310c1637d8653b751aed9c82"
+    }
+  },
+  "rpms": {
+    "libstdcxx": {
+      "filename": "libstdc++-8.5.0-28.el8_10.alma.1.x86_64.rpm",
+      "url": "https://repo.almalinux.org/almalinux/8.10/BaseOS/x86_64/os/Packages/libstdc++-8.5.0-28.el8_10.alma.1.x86_64.rpm",
+      "sha256": "0302b9006d719a31dd51aeaf31fec03d70aad5c318674537bd80c49f9174b066",
+      "payload": "usr/lib64/libstdc++.so.6.0.25",
+      "package": "libstdc++",
+      "version": "8.5.0-28.el8_10.alma.1"
+    },
+    "libgcc": {
+      "filename": "libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm",
+      "url": "https://repo.almalinux.org/almalinux/8.10/BaseOS/x86_64/os/Packages/libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm",
+      "sha256": "629a08266f7c1397c00d7c32c0ac6d110fe56e993dcf94024559aa28a570f18d",
+      "payload": "lib64/libgcc_s.so.1",
+      "package": "libgcc",
+      "version": "8.5.0-28.el8_10.alma.1"
+    },
+    "libstdcxx_nonshared": {
+      "filename": "gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm",
+      "url": "https://repo.almalinux.org/almalinux/8.10/AppStream/x86_64/os/Packages/gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm",
+      "sha256": "acdc19b1ee0b01cbf06377522bd412c20ca2bdbda68630ea6c9ae9ca7c344711",
+      "payload": "opt/rh/gcc-toolset-12/root/usr/lib/gcc/x86_64-redhat-linux/12/libstdc++_nonshared.a",
+      "package": "gcc-toolset-12-libstdc++-devel",
+      "version": "12.2.1-7.8.el8_10"
+    }
+  }
+}
