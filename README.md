@@ -256,10 +256,12 @@ actually selects the isolated RHEL 8 compatibility runtimes, and exercises
 `micromamba activate` / `deactivate` including `CC`, `CXX`, binutils, and RPATH
 behavior. See [conda/README.md](conda/README.md).
 
-The channel is **not published yet**. The compatibility package contains
-AlmaLinux/GNU binary payloads, so public publication remains blocked until the
-exact corresponding source/SRPMs and required third-party notices are pinned
-and made available.
+The channel is **not published yet**. The local build now mirrors the exact
+AlmaLinux source RPMs under `sources/`, emits `SOURCE-METADATA.json` and
+`SHA256SUMS`, and verifies the binary-input-to-source mapping. This addresses
+the corresponding-source delivery path identified for the three redistributed
+GCC runtime payloads; publication remains disabled while the channel workflow
+is still experimental and under review.
 
 ## Licensing and provenance
 

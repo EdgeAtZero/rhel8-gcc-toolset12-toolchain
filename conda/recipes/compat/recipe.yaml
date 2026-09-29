@@ -19,7 +19,7 @@ source:
     file_name: libstdcxx-nonshared.rpm
 
 build:
-  number: 0
+  number: 1
   dynamic_linking:
     binary_relocation: false
     rpaths: []
@@ -35,5 +35,5 @@ tests:
 about:
   homepage: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
   repository: https://github.com/EdgeAtZero/rhel8-gcc-toolset12-toolchain
-  license: GPL-3.0-only WITH GCC-exception-3.1
+  license: GPL-3.0-or-later WITH GCC-exception-3.1
   summary: RHEL 8 compatibility runtime overlay for the GCC Toolset 12 toolchain

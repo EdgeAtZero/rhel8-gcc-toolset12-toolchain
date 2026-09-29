@@ -49,3 +49,33 @@ for license in "$work/libgcc/usr/share/licenses/libgcc/"COPYING*; do
   [[ -f "$license" ]] || continue
   install -m 0644 "$license" "$license_dir/$(basename "$license")"
 done
+notice_dir="$PREFIX/share/doc/rhel8-gcc-toolset12-compat"
+install -d "$notice_dir"
+cat >"$notice_dir/THIRD-PARTY-NOTICES.txt" <<'EOF'
+This package redistributes selected GCC runtime objects from AlmaLinux RPMs.
+
+Binary input:
+  libstdc++-8.5.0-28.el8_10.alma.1.x86_64.rpm
+Payload:
+  libstdc++.so.6.0.25
+Corresponding source:
+  gcc-8.5.0-28.el8_10.alma.1.src.rpm
+
+Binary input:
+  libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm
+Payload:
+  libgcc_s.so.1
+Corresponding source:
+  gcc-8.5.0-28.el8_10.alma.1.src.rpm
+
+Binary input:
+  gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm
+Payload:
+  libstdc++_nonshared.a
+Corresponding source:
+  gcc-toolset-12-gcc-12.2.1-7.8.el8_10.src.rpm
+
+A published project channel must make those exact source RPMs available under
+its accompanying sources/ directory. The original AlmaLinux vault URLs and
+SHA-256 digests are recorded in SOURCE-METADATA.json in that directory.
+EOF

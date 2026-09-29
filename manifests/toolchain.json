@@ -30,7 +30,8 @@
       "sha256": "0302b9006d719a31dd51aeaf31fec03d70aad5c318674537bd80c49f9174b066",
       "payload": "usr/lib64/libstdc++.so.6.0.25",
       "package": "libstdc++",
-      "version": "8.5.0-28.el8_10.alma.1"
+      "version": "8.5.0-28.el8_10.alma.1",
+      "source_rpm": "gcc-8.5.0-28.el8_10.alma.1.src.rpm"
     },
     "libgcc": {
       "filename": "libgcc-8.5.0-28.el8_10.alma.1.x86_64.rpm",
@@ -38,7 +39,8 @@
       "sha256": "629a08266f7c1397c00d7c32c0ac6d110fe56e993dcf94024559aa28a570f18d",
       "payload": "lib64/libgcc_s.so.1",
       "package": "libgcc",
-      "version": "8.5.0-28.el8_10.alma.1"
+      "version": "8.5.0-28.el8_10.alma.1",
+      "source_rpm": "gcc-8.5.0-28.el8_10.alma.1.src.rpm"
     },
     "libstdcxx_nonshared": {
       "filename": "gcc-toolset-12-libstdc++-devel-12.2.1-7.8.el8_10.x86_64.rpm",
@@ -46,7 +48,29 @@
       "sha256": "acdc19b1ee0b01cbf06377522bd412c20ca2bdbda68630ea6c9ae9ca7c344711",
       "payload": "opt/rh/gcc-toolset-12/root/usr/lib/gcc/x86_64-redhat-linux/12/libstdc++_nonshared.a",
       "package": "gcc-toolset-12-libstdc++-devel",
-      "version": "12.2.1-7.8.el8_10"
+      "version": "12.2.1-7.8.el8_10",
+      "source_rpm": "gcc-toolset-12-gcc-12.2.1-7.8.el8_10.src.rpm"
+    }
+  },
+  "corresponding_sources": {
+    "gcc_8": {
+      "filename": "gcc-8.5.0-28.el8_10.alma.1.src.rpm",
+      "url": "https://vault.almalinux.org/8.10/BaseOS/Source/Packages/gcc-8.5.0-28.el8_10.alma.1.src.rpm",
+      "sha256": "c94dbbd2cd6d5d01a5a6822ea18f8ce34942c25a80e17b4682d547d5e652dbd0",
+      "size": 65715094,
+      "provides_for": [
+        "libstdcxx",
+        "libgcc"
+      ]
+    },
+    "gcc_toolset_12": {
+      "filename": "gcc-toolset-12-gcc-12.2.1-7.8.el8_10.src.rpm",
+      "url": "https://vault.almalinux.org/8.10/AppStream/Source/Packages/gcc-toolset-12-gcc-12.2.1-7.8.el8_10.src.rpm",
+      "sha256": "0998437c0b6f38e0fa2cf545ae6701f175c32d220018567f06307fe442c6b3a0",
+      "size": 94857259,
+      "provides_for": [
+        "libstdcxx_nonshared"
+      ]
     }
   }
 }

@@ -16,8 +16,8 @@ Build and validate the local channel:
 ./scripts/build-conda-channel.sh
 ```
 
-The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/conda-channel`, installs the meta package into a temporary prefix, then runs ABI and package-ownership checks plus a real activation/deactivation smoke test. The activation layer runs after the conda-forge compiler scripts, points `CC`/`CXX` and binutils at the compatibility wrappers, and removes conda-forge's prefix RPATH from `LDFLAGS`.
+The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/conda-channel`, mirrors the exact corresponding source RPMs under `sources/`, installs the meta package into a temporary prefix, then runs source-bundle, ABI, package-ownership, and activation/deactivation checks. The activation layer runs after the conda-forge compiler scripts, points `CC`/`CXX` and binutils at the compatibility wrappers, and removes conda-forge's prefix RPATH from `LDFLAGS`.
 
 A local install can be tested directly with the `file://` channel printed by the build script.
 
-The resulting channel is for local engineering validation only. The compatibility package contains AlmaLinux/GNU binary payloads and must not be published until the exact corresponding-source and third-party notice requirements described in `THIRD_PARTY.md` are satisfied.
+The resulting channel is still for local engineering validation only. Its `sources/` directory contains the two SHA-256-pinned AlmaLinux source RPMs corresponding to all three redistributed GCC runtime payloads, together with machine-readable mapping metadata. See `THIRD_PARTY.md` for the redistribution model and provenance details.

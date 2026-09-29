@@ -78,6 +78,27 @@ publish_recipe rhel8-gcc-toolset12-compat "$REPO_ROOT/conda/recipes/compat" -c c
 publish_recipe rhel8-gcc-toolset12-activate "$REPO_ROOT/conda/recipes/activate" -c "file://$CHANNEL_DIR" -c conda-forge
 publish_recipe rhel8-gcc-toolset12-toolchain "$REPO_ROOT/conda/recipes/toolchain" -c "file://$CHANNEL_DIR" -c conda-forge
 
+CHANNEL_DIR="$CHANNEL_DIR" "$REPO_ROOT/scripts/prepare-conda-sources.sh"
+CHANNEL_DIR="$CHANNEL_DIR" "$REPO_ROOT/scripts/verify-conda-sources.sh"
+
+test_mamba_root="$CACHE_ROOT/conda-channel-test-mamba"
+if [[ -d "$test_mamba_root/pkgs" ]]; then
+  python3 - "$test_mamba_root/pkgs" <<'PY'
+import pathlib
+import shutil
+import sys
+
+root = pathlib.Path(sys.argv[1])
+for path in sorted(root.rglob("rhel8-gcc-toolset12-*"), key=lambda p: len(p.parts), reverse=True):
+    if not path.exists() and not path.is_symlink():
+        continue
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+PY
+fi
+
 create_args=(
   --no-rc create -y
   -p "$TEST_PREFIX"
@@ -87,10 +108,10 @@ create_args=(
   --strict-channel-priority
   "rhel8-gcc-toolset12-toolchain=1.0.0"
 )
-MAMBA_ROOT_PREFIX="$CACHE_ROOT/conda-channel-test-mamba" micromamba "${create_args[@]}"
+MAMBA_ROOT_PREFIX="$test_mamba_root" micromamba "${create_args[@]}"
 
 PREFIX="$TEST_PREFIX" "$REPO_ROOT/scripts/verify-conda-channel.sh"
-PREFIX=$TEST_PREFIX $REPO_ROOT/scripts/verify-conda-activation.sh
+PREFIX="$TEST_PREFIX" "$REPO_ROOT/scripts/verify-conda-activation.sh"
 
 echo
 echo "Local channel:"

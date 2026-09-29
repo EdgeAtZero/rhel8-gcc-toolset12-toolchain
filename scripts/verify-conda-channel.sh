@@ -273,6 +273,7 @@ expected_prefixes = {
     "rhel8-gcc-toolset12-compat": (
         "lib/rhel8-gcc-toolset12/",
         "share/licenses/rhel8-gcc-toolset12-compat/",
+        "share/doc/rhel8-gcc-toolset12-compat/",
     ),
     "rhel8-gcc-toolset12-activate": (
         "libexec/rhel8-gcc-toolset12/",
