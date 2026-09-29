@@ -69,10 +69,19 @@ CXX="$PREFIX/bin/c++"
 CC="$PREFIX/bin/cc"
 READELF="$PREFIX/bin/readelf"
 STRINGS="$PREFIX/bin/strings"
+COMPAT="$PREFIX/lib/rhel8-gcc-toolset12"
+SPEC="$PREFIX/share/rhel8-gcc-toolset12/link.specs"
 
 for tool in "$CXX" "$CC" "$READELF" "$STRINGS"; do
   [[ -x "$tool" ]] || {
     echo "Required tool not found: $tool" >&2
+    exit 1
+  }
+done
+
+for path in "$SPEC" "$COMPAT/libstdc++.so" "$COMPAT/libstdc++.so.6" "$COMPAT/$LIBSTDCXX_RUNTIME_NAME" "$COMPAT/libgcc_s.so" "$COMPAT/libgcc_s.so.1" "$COMPAT/libstdc++_nonshared.a"; do
+  [[ -e "$path" ]] || {
+    echo "Required compatibility path missing: $path" >&2
     exit 1
   }
 done
@@ -170,6 +179,15 @@ int main() {
 EOF
 
 "$CXX" -std=c++20 "$WORK_DIR/probe.cpp" -o "$WORK_DIR/probe"
+"$CXX" -std=c++20 "$WORK_DIR/probe.cpp" -Wl,-t -o "$WORK_DIR/probe-trace" >"$WORK_DIR/link-trace.txt" 2>&1
+
+for expected in "$COMPAT/libstdc++.so" "$COMPAT/libstdc++.so.6" "$COMPAT/libstdc++_nonshared.a" "$COMPAT/libgcc_s.so" "$COMPAT/libgcc_s.so.1"; do
+  grep -F "$expected" "$WORK_DIR/link-trace.txt" >/dev/null || {
+    echo "Linker did not select compatibility input: $expected" >&2
+    cat "$WORK_DIR/link-trace.txt" >&2
+    exit 1
+  }
+done
 
 version_max() {
   local file="$1"
@@ -247,8 +265,8 @@ if [[ "$(printf '%s\n' "${needed[@]}")" != "$(printf '%s\n' "${expected_needed_s
   exit 1
 fi
 
-runtime="$PREFIX/$TARGET/sysroot/usr/lib64/libstdc++.so.6"
-libgcc_runtime="$PREFIX/$TARGET/sysroot/usr/lib64/libgcc_s.so.1"
+runtime="$COMPAT/libstdc++.so.6"
+libgcc_runtime="$COMPAT/libgcc_s.so.1"
 
 [[ "$(readlink "$runtime")" == "$LIBSTDCXX_RUNTIME_NAME" ]] || {
   echo "Unexpected libstdc++.so.6 target: $(readlink "$runtime")" >&2
@@ -262,19 +280,19 @@ libgcc_abi="$(version_max "$libgcc_runtime" GCC || true)"
 libgcc_glibc="$(version_max "$libgcc_runtime" GLIBC || true)"
 
 [[ "$runtime_glibcxx" == "$GLIBCXX_MAX" ]] || {
-  echo "Unexpected target libstdc++ GLIBCXX ceiling: $runtime_glibcxx" >&2
+  echo "Unexpected compatibility libstdc++ GLIBCXX ceiling: $runtime_glibcxx" >&2
   exit 1
 }
 [[ "$runtime_cxxabi" == "$CXXABI_MAX" ]] || {
-  echo "Unexpected target libstdc++ CXXABI ceiling: $runtime_cxxabi" >&2
+  echo "Unexpected compatibility libstdc++ CXXABI ceiling: $runtime_cxxabi" >&2
   exit 1
 }
 [[ "$libgcc_abi" == "$GCC_ABI_MAX" ]] || {
-  echo "Unexpected target libgcc_s GCC ABI ceiling: $libgcc_abi" >&2
+  echo "Unexpected compatibility libgcc_s GCC ABI ceiling: $libgcc_abi" >&2
   exit 1
 }
-require_version_at_most "target libstdc++ GLIBC" "$runtime_glibc" "$GLIBC_MAX"
-require_version_at_most "target libgcc_s GLIBC" "$libgcc_glibc" "$GLIBC_MAX"
+require_version_at_most "compatibility libstdc++ GLIBC" "$runtime_glibc" "$GLIBC_MAX"
+require_version_at_most "compatibility libgcc_s GLIBC" "$libgcc_glibc" "$GLIBC_MAX"
 
 absolute_symlink="$(
   find "$PREFIX" -type l -printf '%p\0%l\0' |

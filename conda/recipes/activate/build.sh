@@ -49,7 +49,8 @@ cat >"$wrapper_dir/compiler-wrapper" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-self_dir="$(cd "$(dirname "$0")" && pwd)"
+self="$(readlink -f "$0")"
+self_dir="$(cd "$(dirname "$self")" && pwd)"
 prefix="$(cd "$self_dir/../../.." && pwd)"
 target="x86_64-conda-linux-gnu"
 name="$(basename "$0")"

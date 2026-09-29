@@ -245,9 +245,12 @@ actual_gcc="$("$compiler" -dumpfullversion)"
 }
 
 SYSROOT="$PREFIX/$TARGET/sysroot"
-TARGET_LIB="$PREFIX/$TARGET/lib"
 GCC_LIB="$PREFIX/lib/gcc/$TARGET/$GCC_VERSION"
-SPECS="$GCC_LIB/specs"
+SPEC_SRC="$GCC_LIB/specs"
+SPEC_DIR="$PREFIX/share/rhel8-gcc-toolset12"
+SPEC_DST="$SPEC_DIR/link.specs"
+COMPAT="$PREFIX/lib/rhel8-gcc-toolset12"
+WRAPPER_DIR="$PREFIX/libexec/rhel8-gcc-toolset12/bin"
 
 actual_sysroot="$(readlink -f "$("$compiler" -print-sysroot)")"
 expected_sysroot="$(readlink -f "$SYSROOT")"
@@ -257,87 +260,117 @@ expected_sysroot="$(readlink -f "$SYSROOT")"
   exit 1
 }
 
-install -D -m 0755   "$WORK_DIR/libstdcxx/$LIBSTDCXX_PAYLOAD"   "$SYSROOT/usr/lib64/$LIBSTDCXX_RUNTIME"
-ln -sfn "$LIBSTDCXX_RUNTIME" "$SYSROOT/usr/lib64/libstdc++.so.6"
+install -d "$COMPAT" "$SPEC_DIR" "$WRAPPER_DIR"
 
-install -D -m 0755   "$WORK_DIR/libgcc/$LIBGCC_PAYLOAD"   "$SYSROOT/usr/lib64/libgcc_s.so.1"
+install -m 0755 "$WORK_DIR/libstdcxx/$LIBSTDCXX_PAYLOAD" "$COMPAT/$LIBSTDCXX_RUNTIME"
+ln -sfn "$LIBSTDCXX_RUNTIME" "$COMPAT/libstdc++.so.6"
 
-install -m 0644   "$WORK_DIR/nonshared/$NONSHARED_PAYLOAD"   "$GCC_LIB/libstdc++_nonshared.a"
+install -m 0755 "$WORK_DIR/libgcc/$LIBGCC_PAYLOAD" "$COMPAT/libgcc_s.so.1"
+install -m 0644 "$WORK_DIR/nonshared/$NONSHARED_PAYLOAD" "$COMPAT/libstdc++_nonshared.a"
 
-rm -f "$TARGET_LIB/libstdc++.so" "$TARGET_LIB/libstdc++.so.6" "$TARGET_LIB"/libstdc++.so.6.*
-
-cat >"$WORK_DIR/libstdc++.so" <<'EOF'
+cat >"$COMPAT/libstdc++.so" <<'EOF'
 /* RHEL 8 / GCC Toolset 12 compatibility linker script. */
 INPUT ( libstdc++.so.6 -lstdc++_nonshared )
 EOF
-install -m 0644 "$WORK_DIR/libstdc++.so" "$TARGET_LIB/libstdc++.so"
-ln -sfn "../sysroot/usr/lib64/libstdc++.so.6" "$TARGET_LIB/libstdc++.so.6"
 
-rm -f "$TARGET_LIB/libgcc_s.so" "$TARGET_LIB/libgcc_s.so.1"
-cat >"$WORK_DIR/libgcc_s.so" <<'EOF'
+cat >"$COMPAT/libgcc_s.so" <<'EOF'
 /* RHEL 8 compatibility linker script. */
 GROUP ( libgcc_s.so.1 -lgcc )
 EOF
-install -m 0644 "$WORK_DIR/libgcc_s.so" "$TARGET_LIB/libgcc_s.so"
-ln -sfn "../sysroot/usr/lib64/libgcc_s.so.1" "$TARGET_LIB/libgcc_s.so.1"
 
-[[ -f "$SPECS" ]] || {
-  echo "Expected GCC specs file not found: $SPECS" >&2
+[[ -f "$SPEC_SRC" ]] || {
+  echo "Expected GCC specs file not found: $SPEC_SRC" >&2
   exit 1
 }
 
-python3 - "$SPECS" "$PREFIX" "$WORK_DIR/specs" <<'PY'
+python3 - "$SPEC_SRC" "$SPEC_DST" "$PREFIX" <<'PY'
 import pathlib
 import sys
 
-src = pathlib.Path(sys.argv[1])
-prefix = sys.argv[2]
-dst = pathlib.Path(sys.argv[3])
+src = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+dst = pathlib.Path(sys.argv[2])
+prefix = sys.argv[3]
 
-text = src.read_text(encoding="utf-8")
 marker = "*link_command:\n"
-start = text.find(marker)
+start = src.find(marker)
 if start < 0:
     raise SystemExit("GCC specs does not contain *link_command")
 
-end = text.find("\n*", start + len(marker))
+end = src.find("\n*", start + len(marker))
 if end < 0:
-    end = len(text)
+    end = len(src)
 
-section = text[start:end]
+section = src[start:end]
 needle = f"%{{!static:-rpath {prefix}/lib}}"
 count = section.count(needle)
 if count != 1:
     raise SystemExit(
-        f"Expected exactly one conda prefix RPATH fragment in *link_command, found {count}: {needle}"
+        f"Expected exactly one conda prefix RPATH fragment, found {count}: {needle}"
     )
 
-patched = section.replace(needle, "", 1)
-dst.write_text(text[:start] + patched + text[end:], encoding="utf-8")
+dst.write_text(section.replace(needle, "", 1) + "\n", encoding="utf-8")
 PY
-install -m 0644 "$WORK_DIR/specs" "$SPECS"
 
-if "$compiler" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; then
+cat >"$WRAPPER_DIR/compiler-wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+self="$(readlink -f "$0")"
+self_dir="$(cd "$(dirname "$self")" && pwd)"
+prefix="$(cd "$self_dir/../../.." && pwd)"
+target="x86_64-conda-linux-gnu"
+name="$(basename "$0")"
+name="${name#"$target-"}"
+
+case "$name" in
+  gcc|cc)
+    real="$prefix/bin/$target-gcc"
+    ;;
+  g++|c++)
+    real="$prefix/bin/$target-g++"
+    ;;
+  cpp)
+    exec "$prefix/bin/$target-cpp" "$@"
+    ;;
+  *)
+    echo "Unsupported compiler wrapper name: $name" >&2
+    exit 2
+    ;;
+esac
+
+exec "$real" \
+  -specs="$prefix/share/rhel8-gcc-toolset12/link.specs" \
+  -L"$prefix/lib/rhel8-gcc-toolset12" \
+  "$@"
+EOF
+chmod 0755 "$WRAPPER_DIR/compiler-wrapper"
+
+for name in gcc cc g++ c++ cpp; do
+  ln -s "compiler-wrapper" "$WRAPPER_DIR/$TARGET-$name"
+done
+ln -s "$TARGET-gcc" "$WRAPPER_DIR/gcc"
+ln -s "$TARGET-cc" "$WRAPPER_DIR/cc"
+ln -s "$TARGET-g++" "$WRAPPER_DIR/g++"
+ln -s "$TARGET-c++" "$WRAPPER_DIR/c++"
+ln -s "$TARGET-cpp" "$WRAPPER_DIR/cpp"
+
+# Keep the fixed-prefix assembly's convenient short command names while
+# routing compiler drivers through the compatibility wrappers.
+for name in gcc cc g++ c++ cpp; do
+  ln -sfn "../libexec/rhel8-gcc-toolset12/bin/$name" "$PREFIX/bin/$name"
+done
+
+# Binutils stay on the conda-forge target-prefixed binaries.
+for name in ar as ld nm objcopy objdump ranlib readelf strings strip addr2line c++filt elfedit size gprof; do
+  target_name="$TARGET-$name"
+  [[ -e "$PREFIX/bin/$target_name" ]] || continue
+  ln -sfn "$target_name" "$PREFIX/bin/$name"
+done
+
+if "$PREFIX/bin/gcc" -dumpspecs | grep -F -- "-rpath $PREFIX/lib" >/dev/null; then
   echo "Conda prefix RPATH is still present in effective GCC specs." >&2
   exit 1
 fi
-
-target="$("$compiler" -dumpmachine)"
-
-link_short() {
-  local short="$1"
-  local target_name="$2"
-  local src="$PREFIX/bin/$target_name"
-
-  [[ -e "$src" ]] || return 0
-  ln -sfn "$target_name" "$PREFIX/bin/$short"
-}
-
-for name in gcc g++ cpp ar as ld nm objcopy objdump ranlib readelf strings strip addr2line c++filt elfedit size gprof; do
-  link_short "$name" "$target-$name"
-done
-ln -sfn gcc "$PREFIX/bin/cc"
-ln -sfn g++ "$PREFIX/bin/c++"
 
 install -m 0644 "$MANIFEST" "$PREFIX/TOOLCHAIN-MANIFEST.json"
 install -m 0644 "$CONDA_LOCK" "$PREFIX/CONDA-EXPLICIT.lock"
