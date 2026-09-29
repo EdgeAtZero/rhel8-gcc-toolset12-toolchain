@@ -62,14 +62,12 @@ if find "$PREFIX/bin" -maxdepth 1 -name 'x86_64-conda_cos6-linux-gnu-*' -print -
   exit 1
 fi
 
-[[ "$(readlink "$WRAPPER_BIN/gcc")" == "$TARGET-gcc" ]] || {
-  echo "Short gcc wrapper does not follow the conda-forge target-prefixed layout." >&2
-  exit 1
-}
-[[ "$(readlink "$WRAPPER_BIN/g++")" == "$TARGET-g++" ]] || {
-  echo "Short g++ wrapper does not follow the conda-forge target-prefixed layout." >&2
-  exit 1
-}
+for name in gcc g++ cc c++ cpp; do
+  if [[ -e "$WRAPPER_BIN/$name" || -L "$WRAPPER_BIN/$name" ]]; then
+    echo "Unexpected short compiler wrapper alias: $WRAPPER_BIN/$name" >&2
+    exit 1
+  fi
+done
 
 [[ "$("$CXX" -dumpmachine)" == "$TARGET" ]] || {
   echo "Unexpected compiler target." >&2
