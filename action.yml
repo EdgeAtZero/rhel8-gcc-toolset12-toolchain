@@ -75,8 +75,10 @@ runs:
               python3 -c 'import json, sys; print(json.load(sys.stdin)["base environment"])'
           )"
         fi
+        set +u
         eval "$(micromamba shell hook --shell bash)"
         micromamba activate "${environment_name}"
+        set -u
 
         printf '%s\n' "${prefix}/bin" >> "${GITHUB_PATH}"
         printf '%s\n' "${prefix}/libexec/rhel8-gcc-toolset12/bin" >> "${GITHUB_PATH}"

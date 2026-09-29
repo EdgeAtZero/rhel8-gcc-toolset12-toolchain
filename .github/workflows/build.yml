@@ -21,7 +21,9 @@ jobs:
       - name: Cache upstream packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/rhel8-gcc-toolset12-toolchain
+          path: |
+            ~/.cache/rhel8-gcc-toolset12-toolchain
+            ~/.local/share/mamba/pkgs
           key: rhel8-toolchain-inputs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('manifests/toolchain.json', 'manifests/conda-linux-64.lock') }}
           restore-keys: |
             rhel8-toolchain-inputs-${{ runner.os }}-${{ runner.arch }}-
