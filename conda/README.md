@@ -10,13 +10,28 @@ The packages are split by ownership:
 
 The wrappers deliberately do not modify files owned by conda-forge. In particular, the original GCC `specs` file remains untouched; the wrapper loads a project-owned `link.specs` override that removes the conda prefix RPATH and adds the compatibility runtime search directory.
 
+Install from the public channel with micromamba:
+
+```bash
+micromamba create -y -n rhel8-gcc-toolset12 \
+  --override-channels \
+  -c https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda \
+  -c conda-forge \
+  --strict-channel-priority \
+  rhel8-gcc-toolset12-toolchain=1.0.0
+
+micromamba activate rhel8-gcc-toolset12
+```
+
+The named environment uses micromamba's normal environment location; no `/opt/toolchains` prefix is required for channel users.
+
 Build and validate the local channel:
 
 ```bash
 ./scripts/build-conda-channel.sh
 ```
 
-The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/conda-channel`, mirrors the exact corresponding source RPMs under `sources/`, installs the meta package into a temporary prefix, then runs source-bundle, ABI, package-ownership, and activation/deactivation checks. The activation layer runs after the conda-forge compiler scripts, points `CC`/`CXX` and binutils at the compatibility wrappers, and removes conda-forge's prefix RPATH from `LDFLAGS`.
+The script creates the channel under `~/.cache/rhel8-gcc-toolset12-toolchain/conda-channel`, mirrors the exact corresponding source RPMs under `sources/`, installs the meta package into a temporary prefix, then runs source-bundle, ABI, package-ownership, and activation/deactivation checks. The activation layer runs after the conda-forge compiler scripts, routes `CC`/`CXX` through the target-prefixed compatibility compiler wrappers, preserves conda-forge's target-prefixed binutils behavior, and removes conda-forge's prefix RPATH from `LDFLAGS`.
 
 A local install can be tested directly with the `file://` channel printed by the build script.
 

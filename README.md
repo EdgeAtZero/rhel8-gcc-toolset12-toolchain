@@ -8,11 +8,13 @@ Installed identity:
 linux-x86_64-rhel8-gcc-toolset12
 ```
 
-Default release prefix:
+Fixed-prefix assembly default:
 
 ```text
 /opt/toolchains/linux-x86_64-rhel8-gcc-toolset12
 ```
+
+This fixed prefix is used by the repository assembly path and GitHub Action. Public conda-channel installs should use a normal micromamba named environment instead.
 
 Target compatibility ceilings:
 
@@ -24,6 +26,27 @@ GCC ABI <= 7.0.0
 ```
 
 These are release gates, not promises about every application built with the toolchain. Final native artifacts must still be inspected because project code and linked third-party libraries can introduce stricter requirements.
+
+## Install with micromamba
+
+The public conda channel is the recommended installation path:
+
+```bash
+micromamba create -y -n rhel8-gcc-toolset12 \
+  --override-channels \
+  -c https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda \
+  -c conda-forge \
+  --strict-channel-priority \
+  rhel8-gcc-toolset12-toolchain=1.0.0
+```
+
+Activate it using the standard micromamba environment name:
+
+```bash
+micromamba activate rhel8-gcc-toolset12
+```
+
+The environment is stored under micromamba's normal root prefix rather than a project-specific `/opt` location. Shell activation requires micromamba shell integration to be initialized in the usual way.
 
 ## Why
 
