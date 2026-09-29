@@ -199,8 +199,10 @@ Consumers can assemble the pinned toolchain directly on a Linux x86_64 runner:
 ```yaml
 - name: Set up RHEL 8 GCC Toolset 12
   id: toolchain
-  uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
+  uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1
 ```
+
+`@v1` tracks the latest compatible v1 release. For an immutable pin, use the exact release tag, for example `@v1.0.1`.
 
 The Action no longer downloads a prebuilt project Release archive. It installs
 the pinned micromamba bootstrap, downloads the exact conda-forge and AlmaLinux
@@ -230,7 +232,7 @@ key: native-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('
 The only optional input is verification:
 
 ```yaml
-- uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
+- uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1
   with:
     verify: 'false'
 ```
