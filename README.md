@@ -55,7 +55,7 @@ The shared runtimes come from pinned AlmaLinux 8.10 RPMs. Newer implementation p
 
 ## Reproducibility model
 
-Release builds do not run the conda solver.
+Pinned toolchain assembly does not run the conda solver.
 
 The repository contains:
 
@@ -101,7 +101,7 @@ A custom prefix is supported for local experiments:
 ./scripts/build-toolchain.sh --prefix /tmp/rhel8-gcc-toolset12
 ```
 
-Release archives are intentionally built for the default `/opt/toolchains/...` prefix. The conda compiler packages contain prefix-aware content, so the archive is not advertised as arbitrarily relocatable.
+Local archives are intentionally built for the default `/opt/toolchains/...` prefix. The conda compiler packages contain prefix-aware content, so the archive is not advertised as arbitrarily relocatable.
 
 ## Verify
 
@@ -124,27 +124,29 @@ The verification gate checks:
 
 A typical probe currently requires substantially less than the policy ceilings, but that is only the probe's requirement. Consumers must inspect their final binaries separately.
 
-## Package
+## Local package
+
+For local/internal reproducibility work:
 
 ```bash
 ./scripts/package-toolchain.sh
 ```
 
-Release output under `dist/` includes:
+This creates an assembled toolchain archive, checksum, SPDX SBOM, and release
+metadata under `dist/`.
 
-```text
-linux-x86_64-rhel8-gcc-toolset12.tar.zst
-linux-x86_64-rhel8-gcc-toolset12.tar.zst.sha256
-linux-x86_64-rhel8-gcc-toolset12.spdx.json
-RELEASE-METADATA.json
-SHA256SUMS
-```
+The project does **not** publish that archive as an official GitHub Release
+asset. It contains third-party GCC/binutils/glibc/sysroot/runtime binaries, so
+public redistribution has license and corresponding-source obligations beyond
+this repository's MIT license.
 
-The SPDX 2.3 SBOM describes the exact conda package records plus the AlmaLinux RPM compatibility components.
+The packaging script remains useful for local deployment, archive
+reproducibility testing, and private environments where the distributor has
+separately reviewed those obligations. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## GitHub Action
 
-Consumers can install the matching release directly:
+Consumers can assemble the pinned toolchain directly on a Linux x86_64 runner:
 
 ```yaml
 - name: Set up RHEL 8 GCC Toolset 12
@@ -152,9 +154,11 @@ Consumers can install the matching release directly:
   uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
 ```
 
-The Action tag and toolchain Release tag are intentionally identical. It downloads the release through the GitHub Releases API, verifies SHA-256, extracts into an unprivileged temporary directory, rejects escaping/absolute symlinks, verifies the embedded manifest, and only then installs the fixed prefix under `/opt/toolchains`.
-
-It exports `PATH`, `CC`, `CXX`, `CPP`, `GCC`, `GXX`, and the common binutils variables, then runs the ABI verification gate by default.
+The Action no longer downloads a prebuilt project Release archive. It installs
+the pinned micromamba bootstrap, downloads the exact conda-forge and AlmaLinux
+inputs recorded by this repository, assembles the fixed-prefix toolchain under
+`/opt/toolchains`, exports the compiler/binutils environment variables, and
+runs the ABI verification gate by default.
 
 Outputs:
 
@@ -164,40 +168,43 @@ version
 identity
 ```
 
-The `identity` output is intended for consumer cache keys:
+`identity` is derived from the committed toolchain manifest and explicit conda
+lock, so it is suitable for consumer build-cache keys:
 
 ```yaml
 key: native-linux-x86_64-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('your-inputs.json') }}
 ```
 
-Optional inputs:
+The only optional input is verification:
 
 ```yaml
 - uses: EdgeAtZero/rhel8-gcc-toolset12-toolchain@v1.0.0
   with:
-    version: v1.0.0
-    repository: EdgeAtZero/rhel8-gcc-toolset12-toolchain
-    verify: 'true'
+    verify: 'false'
 ```
 
-For a private release repository, pass `github-token` with `contents:read` access to that repository.
-
-There is intentionally no arbitrary `install-prefix` input today because the release prefix is not generally relocatable. There is also no final-toolchain Action cache input: Release assets are already immutable distribution objects, while consumers can use the stable `identity` output to cache their own build products.
+There is intentionally no arbitrary `install-prefix` input because the compiler
+packages contain prefix-aware content and the supported assembled prefix is
+fixed. Consumers that want download caching can cache
+`~/.cache/rhel8-gcc-toolset12-toolchain` in their own workflow.
 
 ## GitHub Actions and supply chain
 
 The repository workflow:
 
-1. caches only source/package downloads, not the assembled final toolchain;
+1. caches only downloads from the original upstream package repositories;
 2. installs a SHA-256-pinned micromamba binary;
-3. builds from the explicit conda lock and pinned RPMs;
-4. runs ABI verification;
-5. creates deterministic archive metadata, checksums, SPDX SBOM, and release metadata;
-6. uploads workflow artifacts;
-7. on `v*` tags, creates GitHub artifact attestations for both SLSA build provenance and the SBOM;
-8. publishes the already-built files to the matching GitHub Release.
+3. assembles from the explicit conda lock and pinned AlmaLinux RPMs;
+4. runs the ABI verification gate;
+5. does not upload or publish the assembled third-party binary toolchain;
+6. on `v*` tags, creates a source-only GitHub Release for this repository.
 
-Third-party GitHub Actions are pinned to commit SHAs rather than mutable major tags.
+Third-party GitHub Actions are pinned to commit SHAs rather than mutable major
+tags.
+
+This keeps the project's official distribution focused on its MIT-licensed
+scripts/manifests while the third-party binary inputs are obtained from their
+original distributors.
 
 ## Updating inputs
 
@@ -219,24 +226,42 @@ For AlmaLinux RPMs, update `manifests/toolchain.json` only after checking the ne
 
 ## Future conda channel
 
-The GitHub Release tarball remains the primary distribution model for now.
+A conda channel is a better long-term installation surface than republishing a
+monolithic `/opt` archive, but it should be split deliberately.
 
-A future channel should not overwrite files owned by conda-forge packages in-place. A plausible model is:
+The intended package model is:
 
 ```text
-meta package
-+
-compat runtime package
-+
-compiler wrapper / activation package
+rhel8-gcc-toolset12-toolchain     meta package
+        |
+        +-- exact conda-forge GCC/binutils/sysroot dependencies
+        +-- rhel8-gcc-toolset12-compat
+        +-- rhel8-gcc-toolset12-activate
 ```
 
-That design needs explicit package ownership, uninstall/update behavior, solver constraints, prefix relocation rules, sysroot behavior, activation semantics, and licensing before it is suitable for publication.
+`rhel8-gcc-toolset12-compat` should own only the compatibility overlay files
+that cannot be expressed as ordinary conda-forge dependencies. If that package
+contains AlmaLinux/GNU GPL or LGPL binary payloads, its channel release must
+also carry the required notices and exact corresponding-source access.
+
+`rhel8-gcc-toolset12-activate` should contain project-owned wrapper/activation
+logic and must not overwrite paths owned by conda-forge packages.
+
+The meta package then pins the tested package set and gives users one stable
+package name without copying the whole conda-forge compiler stack into this
+project's channel.
 
 ## Licensing and provenance
 
 The MIT license covers the repository's scripts and documentation only.
 
-Generated toolchains contain GCC, glibc/sysroot content, libstdc++, libgcc, binutils, conda-forge packages, and AlmaLinux RPM contents under their own licenses and redistribution terms. The SPDX SBOM is inventory/provenance data and is not a substitute for satisfying those licenses or corresponding-source obligations.
+The official GitHub Action assembles the toolchain on the consumer's runner
+from exact third-party package URLs rather than downloading a project-hosted
+binary toolchain Release. The repository therefore does not currently present
+its MIT license as redistribution terms for the assembled GCC, glibc/sysroot,
+libstdc++, libgcc, binutils, or AlmaLinux payloads.
+
+A locally generated `dist/*.tar.zst` still contains those third-party binaries
+and must not be treated as automatically MIT-redistributable.
 
 See [THIRD_PARTY.md](THIRD_PARTY.md).

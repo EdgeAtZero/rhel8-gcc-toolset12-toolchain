@@ -4,6 +4,9 @@ export LC_ALL=C
 export TZ=UTC
 umask 022
 
+echo "NOTICE: generated toolchain archives are for local/internal use by default." >&2
+echo "Public redistribution requires separate third-party license/source review; see THIRD_PARTY.md." >&2
+
 TOOLCHAIN_NAME="linux-x86_64-rhel8-gcc-toolset12"
 PREFIX="${PREFIX:-/opt/toolchains/$TOOLCHAIN_NAME}"
 ROOT="$(dirname "$PREFIX")"
