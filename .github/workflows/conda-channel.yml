@@ -125,25 +125,6 @@ jobs:
 
           printf '%s\n' "$GITHUB_SHA" >"$SITE_DIR/SOURCE-COMMIT"
 
-      - name: Publish single-commit gh-pages snapshot
-        env:
-          SITE_DIR: ${{ runner.temp }}/site
-        run: |
-          set -euo pipefail
-
-          git switch --orphan gh-pages-snapshot
-          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
-          cp -a "$SITE_DIR/." .
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-          git -c commit.gpgsign=false commit -m "Publish conda channel from $GITHUB_SHA"
-
-          test "$(git rev-list --count HEAD)" -eq 1
-          git push --force origin HEAD:gh-pages
-
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 

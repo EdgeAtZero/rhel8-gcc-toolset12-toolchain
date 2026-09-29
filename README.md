@@ -281,10 +281,9 @@ actually selects the isolated RHEL 8 compatibility runtimes, and exercises
 `micromamba activate` / `deactivate` including `CC`, `CXX`, binutils, and RPATH
 behavior. See [conda/README.md](conda/README.md).
 
-On successful `main` validation, the channel workflow publishes the exact
-validated snapshot to the orphan `gh-pages` branch and deploys the same files
-with GitHub Pages. The branch is force-replaced on each publication, so it keeps
-one generated commit instead of accumulating historical SRPM blobs.
+On successful `main` validation, the channel workflow deploys the exact
+validated snapshot directly to GitHub Pages from the validated workflow artifact.
+No generated Git branch is used as a publication surface.
 
 The public channel URL is:
 
@@ -293,8 +292,8 @@ https://edgeatzero.github.io/rhel8-gcc-toolset12-toolchain/conda
 ```
 
 GitHub Pages must be configured once with **Source: GitHub Actions** in the
-repository Pages settings. Pull requests only run validation and never update
-`gh-pages` or deploy Pages.
+repository Pages settings. Pull requests only run validation and never deploy
+Pages.
 
 ## Licensing and provenance
 

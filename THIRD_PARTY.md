@@ -76,8 +76,8 @@ and a GCC source tarball.
 The `main` channel workflow publishes the complete validated channel snapshot,
 including the generated `sources/` directory next to the custom binary packages,
 so the pinned Corresponding Source is distributed with the redistributed GCC
-runtime objects. The same snapshot is stored as a single reachable commit on
-`gh-pages` and deployed through GitHub Pages.
+runtime objects. The validated snapshot is deployed directly through GitHub Pages
+without storing a generated channel snapshot in a Git branch.
 
 A monolithic binary toolchain archive remains a separate redistribution surface
 and requires its own complete license/source review before public publication.

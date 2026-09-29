@@ -1,6 +1,6 @@
 # Conda channel
 
-This directory contains the conda packaging model for the toolchain. It supports local `file://` validation and, after successful `main` validation, publication through the generated `gh-pages` snapshot.
+This directory contains the conda packaging model for the toolchain. It supports local `file://` validation and, after successful `main` validation, direct publication through GitHub Pages.
 
 The packages are split by ownership:
 
@@ -37,6 +37,6 @@ A local install can be tested directly with the `file://` channel printed by the
 
 CI runs the same path in `.github/workflows/conda-channel.yml` on a clean Ubuntu runner and uploads the complete validated channel as a short-lived workflow artifact.
 
-For successful `main` runs, a publish job downloads that exact validated artifact, creates a fresh orphan `gh-pages` snapshot containing `.nojekyll`, `conda/`, and a small landing page, force-pushes it to `gh-pages`, then deploys the same snapshot through GitHub Pages. Because each snapshot is an orphan commit, the generated branch does not accumulate old SRPM history.
+For successful `main` runs, a publish job downloads that exact validated artifact, prepares `.nojekyll`, `conda/`, and a small landing page, then deploys the snapshot directly through GitHub Pages. No generated Git branch is created or retained.
 
-The resulting local channel remains useful for engineering validation, while the `gh-pages` snapshot is the public distribution surface after Pages is enabled with **Source: GitHub Actions**. Its `sources/` directory contains the two SHA-256-pinned AlmaLinux source RPMs corresponding to all three redistributed GCC runtime payloads, together with machine-readable mapping metadata. See `THIRD_PARTY.md` for the redistribution model and provenance details.
+The resulting local channel remains useful for engineering validation, while GitHub Pages is the public distribution surface after Pages is enabled with **Source: GitHub Actions**. Its `sources/` directory contains the two SHA-256-pinned AlmaLinux source RPMs corresponding to all three redistributed GCC runtime payloads, together with machine-readable mapping metadata. See `THIRD_PARTY.md` for the redistribution model and provenance details.
